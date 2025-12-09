@@ -48,9 +48,26 @@ class SeedDataRequest(BaseModel):
 
 # Helper function to run Neo4j queries
 def run_neo4j_query(query: str, parameters: dict = None):
+    def serialize_neo4j_object(obj):
+        """Convert Neo4j objects to serializable dictionaries"""
+        if hasattr(obj, '_properties'):  # Neo4j Node or Relationship
+            return dict(obj._properties)
+        elif hasattr(obj, 'items'):  # Dictionary-like
+            return {k: serialize_neo4j_object(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [serialize_neo4j_object(item) for item in obj]
+        else:
+            return obj
+    
     with driver.session(database=neo4j_database) as session:
         result = session.run(query, parameters or {})
-        return [dict(record) for record in result]
+        records = []
+        for record in result:
+            record_dict = {}
+            for key, value in record.items():
+                record_dict[key] = serialize_neo4j_object(value)
+            records.append(record_dict)
+        return records
 
 # Helper function to generate Cypher query using LLM
 async def generate_cypher_query(natural_language_query: str) -> str:
