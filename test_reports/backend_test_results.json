@@ -1,0 +1,358 @@
+{
+  "timestamp": "2025-12-09T22:29:53.374913",
+  "summary": {
+    "tests_run": 5,
+    "tests_passed": 4,
+    "success_rate": 80.0
+  },
+  "test_results": [
+    {
+      "test_name": "Root API",
+      "endpoint": "",
+      "method": "GET",
+      "expected_status": 200,
+      "actual_status": 200,
+      "success": true,
+      "response_data": {
+        "message": "AeroGraph Analytics API - GraphRAG with Neo4j"
+      },
+      "error": null
+    },
+    {
+      "test_name": "Get Examples",
+      "endpoint": "examples",
+      "method": "GET",
+      "expected_status": 200,
+      "actual_status": 200,
+      "success": true,
+      "response_data": [
+        {
+          "id": 1,
+          "question": "Quais aeroportos est\u00e3o no Brasil?",
+          "description": "Lista todos os aeroportos brasileiros"
+        },
+        {
+          "id": 2,
+          "question": "Mostre todas as rotas saindo de GRU",
+          "description": "Rotas do Aeroporto de Guarulhos"
+        },
+        {
+          "id": 3,
+          "question": "Quais companhias a\u00e9reas operam rotas internacionais?",
+          "description": "Companhias com rotas entre pa\u00edses"
+        },
+        {
+          "id": 4,
+          "question": "Qual \u00e9 a rota mais longa?",
+          "description": "Rota com maior dist\u00e2ncia"
+        },
+        {
+          "id": 5,
+          "question": "Quantos aeroportos existem em cada pa\u00eds?",
+          "description": "Contagem de aeroportos por pa\u00eds"
+        }
+      ],
+      "error": null
+    },
+    {
+      "test_name": "Seed Data",
+      "endpoint": "seed-data",
+      "method": "POST",
+      "expected_status": 200,
+      "actual_status": 200,
+      "success": true,
+      "response_data": {
+        "message": "Data seeded successfully",
+        "airports": 10,
+        "airlines": 5,
+        "routes": 10
+      },
+      "error": null
+    },
+    {
+      "test_name": "Get Graph Data",
+      "endpoint": "graph/data",
+      "method": "GET",
+      "expected_status": 200,
+      "actual_status": 200,
+      "success": true,
+      "response_data": {
+        "nodes": [
+          {
+            "id": "3993",
+            "label": "Airport",
+            "name": "Aeroporto Internacional de S\u00e3o Paulo/Guarulhos",
+            "properties": {
+              "country": "Brazil",
+              "code": "GRU",
+              "city": "S\u00e3o Paulo",
+              "name": "Aeroporto Internacional de S\u00e3o Paulo/Guarulhos"
+            }
+          },
+          {
+            "id": "3994",
+            "label": "Airport",
+            "name": "Aeroporto de Congonhas",
+            "properties": {
+              "country": "Brazil",
+              "code": "CGH",
+              "city": "S\u00e3o Paulo",
+              "name": "Aeroporto de Congonhas"
+            }
+          },
+          {
+            "id": "3995",
+            "label": "Airport",
+            "name": "Aeroporto Internacional do Rio de Janeiro/Gale\u00e3o",
+            "properties": {
+              "country": "Brazil",
+              "code": "GIG",
+              "city": "Rio de Janeiro",
+              "name": "Aeroporto Internacional do Rio de Janeiro/Gale\u00e3o"
+            }
+          },
+          {
+            "id": "3996",
+            "label": "Airport",
+            "name": "Aeroporto Internacional de Bras\u00edlia",
+            "properties": {
+              "country": "Brazil",
+              "code": "BSB",
+              "city": "Bras\u00edlia",
+              "name": "Aeroporto Internacional de Bras\u00edlia"
+            }
+          },
+          {
+            "id": "3997",
+            "label": "Airport",
+            "name": "John F. Kennedy International Airport",
+            "properties": {
+              "country": "USA",
+              "code": "JFK",
+              "city": "New York",
+              "name": "John F. Kennedy International Airport"
+            }
+          },
+          {
+            "id": "3998",
+            "label": "Airport",
+            "name": "Los Angeles International Airport",
+            "properties": {
+              "country": "USA",
+              "code": "LAX",
+              "city": "Los Angeles",
+              "name": "Los Angeles International Airport"
+            }
+          },
+          {
+            "id": "3999",
+            "label": "Airport",
+            "name": "London Heathrow Airport",
+            "properties": {
+              "country": "UK",
+              "code": "LHR",
+              "city": "London",
+              "name": "London Heathrow Airport"
+            }
+          },
+          {
+            "id": "4000",
+            "label": "Airport",
+            "name": "Charles de Gaulle Airport",
+            "properties": {
+              "country": "France",
+              "code": "CDG",
+              "city": "Paris",
+              "name": "Charles de Gaulle Airport"
+            }
+          },
+          {
+            "id": "4001",
+            "label": "Airport",
+            "name": "Narita International Airport",
+            "properties": {
+              "country": "Japan",
+              "code": "NRT",
+              "city": "Tokyo",
+              "name": "Narita International Airport"
+            }
+          },
+          {
+            "id": "4002",
+            "label": "Airport",
+            "name": "Dubai International Airport",
+            "properties": {
+              "country": "UAE",
+              "code": "DXB",
+              "city": "Dubai",
+              "name": "Dubai International Airport"
+            }
+          },
+          {
+            "id": "4003",
+            "label": "Airline",
+            "name": "LATAM Airlines",
+            "properties": {
+              "country": "Brazil",
+              "code": "LATAM",
+              "name": "LATAM Airlines"
+            }
+          },
+          {
+            "id": "4004",
+            "label": "Airline",
+            "name": "Gol Linhas A\u00e9reas",
+            "properties": {
+              "country": "Brazil",
+              "code": "GOL",
+              "name": "Gol Linhas A\u00e9reas"
+            }
+          },
+          {
+            "id": "4005",
+            "label": "Airline",
+            "name": "American Airlines",
+            "properties": {
+              "country": "USA",
+              "code": "AA",
+              "name": "American Airlines"
+            }
+          },
+          {
+            "id": "4006",
+            "label": "Airline",
+            "name": "British Airways",
+            "properties": {
+              "country": "UK",
+              "code": "BA",
+              "name": "British Airways"
+            }
+          },
+          {
+            "id": "4007",
+            "label": "Airline",
+            "name": "Emirates",
+            "properties": {
+              "country": "UAE",
+              "code": "EK",
+              "name": "Emirates"
+            }
+          }
+        ],
+        "links": [
+          {
+            "source": "3993",
+            "target": "3995",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 365,
+              "airline": "LATAM",
+              "duration_hours": 1.0
+            }
+          },
+          {
+            "source": "3993",
+            "target": "3996",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 872,
+              "airline": "GOL",
+              "duration_hours": 1.5
+            }
+          },
+          {
+            "source": "3993",
+            "target": "3997",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 7680,
+              "airline": "LATAM",
+              "duration_hours": 10.5
+            }
+          },
+          {
+            "source": "3993",
+            "target": "3999",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 9450,
+              "airline": "BA",
+              "duration_hours": 11.5
+            }
+          },
+          {
+            "source": "3994",
+            "target": "3995",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 365,
+              "airline": "GOL",
+              "duration_hours": 1.0
+            }
+          },
+          {
+            "source": "3995",
+            "target": "3997",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 7750,
+              "airline": "AA",
+              "duration_hours": 10.0
+            }
+          },
+          {
+            "source": "3997",
+            "target": "3998",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 3970,
+              "airline": "AA",
+              "duration_hours": 5.5
+            }
+          },
+          {
+            "source": "3999",
+            "target": "4000",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 340,
+              "airline": "BA",
+              "duration_hours": 1.0
+            }
+          },
+          {
+            "source": "4001",
+            "target": "3998",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 8800,
+              "airline": "AA",
+              "duration_hours": 11.0
+            }
+          },
+          {
+            "source": "4002",
+            "target": "3999",
+            "type": "ROUTE",
+            "properties": {
+              "distance_km": 5470,
+              "airline": "EK",
+              "duration_hours": 7.0
+            }
+          }
+        ]
+      },
+      "error": null
+    },
+    {
+      "test_name": "GraphRAG Query",
+      "endpoint": "graphrag/query",
+      "method": "POST",
+      "expected_status": 200,
+      "actual_status": 500,
+      "success": false,
+      "response_data": null,
+      "error": "Internal Server Error"
+    }
+  ]
+}
