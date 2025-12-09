@@ -1,23 +1,28 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
+from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
+from neo4j import GraphDatabase
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Neo4j connection
+neo4j_uri = os.environ['NEO4J_URI']
+neo4j_user = os.environ['NEO4J_USERNAME']
+neo4j_password = os.environ['NEO4J_PASSWORD']
+neo4j_database = os.environ['NEO4J_DATABASE']
+
+driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+
+# Emergent LLM Key
+emergent_llm_key = os.environ['EMERGENT_LLM_KEY']
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -25,46 +30,243 @@ app = FastAPI()
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-
 # Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
+class QueryRequest(BaseModel):
+    query: str
+
+class QueryResponse(BaseModel):
+    answer: str
+    cypher_query: str
+    results: List[Dict[str, Any]]
+
+class GraphData(BaseModel):
+    nodes: List[Dict[str, Any]]
+    links: List[Dict[str, Any]]
+
+class SeedDataRequest(BaseModel):
+    clear_existing: bool = False
+
+# Helper function to run Neo4j queries
+def run_neo4j_query(query: str, parameters: dict = None):
+    with driver.session(database=neo4j_database) as session:
+        result = session.run(query, parameters or {})
+        return [dict(record) for record in result]
+
+# Helper function to generate Cypher query using LLM
+async def generate_cypher_query(natural_language_query: str) -> str:
+    chat = LlmChat(
+        api_key=emergent_llm_key,
+        session_id="graphrag-session",
+        system_message="""You are a Neo4j Cypher query expert. Given a natural language question about an aviation network database, 
+generate a valid Cypher query. The database contains:
+
+- Airport nodes with properties: code, name, city, country
+- Airline nodes with properties: code, name, country
+- ROUTE relationships connecting airports with properties: airline, distance_km, duration_hours
+- OPERATES relationships from airlines to routes
+
+Return ONLY the Cypher query, no explanations. Use MATCH and RETURN statements.
+Always limit results to 50 items maximum.
+
+Examples:
+- "Which airports are in Brazil?" -> MATCH (a:Airport {country: 'Brazil'}) RETURN a LIMIT 50
+- "Show all routes from GRU" -> MATCH (a:Airport {code: 'GRU'})-[r:ROUTE]->(b:Airport) RETURN a, r, b LIMIT 50
+- "Which airlines operate international routes?" -> MATCH (al:Airline)-[:OPERATES]->(a:Airport)-[r:ROUTE]->(b:Airport) WHERE a.country <> b.country RETURN DISTINCT al LIMIT 50
+"""
+    ).with_model("gemini", "gemini-2.5-flash")
     
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    user_message = UserMessage(text=natural_language_query)
+    response = await chat.send_message(user_message)
+    
+    # Clean up the response to extract only the query
+    cypher_query = response.strip()
+    # Remove markdown code blocks if present
+    if cypher_query.startswith('```'):
+        lines = cypher_query.split('\n')
+        cypher_query = '\n'.join(lines[1:-1] if lines[-1].startswith('```') else lines[1:])
+    
+    return cypher_query.strip()
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-# Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "AeroGraph Analytics API - GraphRAG with Neo4j"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+@api_router.post("/graphrag/query", response_model=QueryResponse)
+async def graphrag_query(request: QueryRequest):
+    try:
+        # Generate Cypher query using LLM
+        cypher_query = await generate_cypher_query(request.query)
+        
+        # Execute the generated query
+        results = run_neo4j_query(cypher_query)
+        
+        # Generate natural language answer
+        chat = LlmChat(
+            api_key=emergent_llm_key,
+            session_id="answer-session",
+            system_message="You are a helpful assistant that explains query results from an aviation network database in natural language. Be concise and informative."
+        ).with_model("gemini", "gemini-2.5-flash")
+        
+        answer_prompt = f"""Based on the query '{request.query}' and the results: {results[:5]}, 
+provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sentences."""
+        
+        answer_message = UserMessage(text=answer_prompt)
+        answer = await chat.send_message(answer_message)
+        
+        return QueryResponse(
+            answer=answer,
+            cypher_query=cypher_query,
+            results=results[:50]
+        )
+    except Exception as e:
+        logging.error(f"Error in graphrag_query: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.get("/graph/data", response_model=GraphData)
+async def get_graph_data():
+    try:
+        # Get nodes (airports and airlines)
+        nodes_query = """
+        MATCH (n)
+        WHERE n:Airport OR n:Airline
+        RETURN id(n) as id, labels(n)[0] as label, properties(n) as properties
+        LIMIT 100
+        """
+        nodes_data = run_neo4j_query(nodes_query)
+        
+        # Get relationships
+        links_query = """
+        MATCH (a)-[r:ROUTE]->(b)
+        RETURN id(a) as source, id(b) as target, type(r) as type, properties(r) as properties
+        LIMIT 200
+        """
+        links_data = run_neo4j_query(links_query)
+        
+        # Format nodes
+        nodes = []
+        for node in nodes_data:
+            node_id = node['id']
+            label = node['label']
+            props = node['properties']
+            nodes.append({
+                'id': str(node_id),
+                'label': label,
+                'name': props.get('name') or props.get('code', f"{label}_{node_id}"),
+                'properties': props
+            })
+        
+        # Format links
+        links = []
+        for link in links_data:
+            links.append({
+                'source': str(link['source']),
+                'target': str(link['target']),
+                'type': link['type'],
+                'properties': link.get('properties', {})
+            })
+        
+        return GraphData(nodes=nodes, links=links)
+    except Exception as e:
+        logging.error(f"Error getting graph data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving graph data: {str(e)}")
+
+@api_router.get("/examples")
+async def get_example_queries():
+    return [
+        {
+            "id": 1,
+            "question": "Quais aeroportos estão no Brasil?",
+            "description": "Lista todos os aeroportos brasileiros"
+        },
+        {
+            "id": 2,
+            "question": "Mostre todas as rotas saindo de GRU",
+            "description": "Rotas do Aeroporto de Guarulhos"
+        },
+        {
+            "id": 3,
+            "question": "Quais companhias aéreas operam rotas internacionais?",
+            "description": "Companhias com rotas entre países"
+        },
+        {
+            "id": 4,
+            "question": "Qual é a rota mais longa?",
+            "description": "Rota com maior distância"
+        },
+        {
+            "id": 5,
+            "question": "Quantos aeroportos existem em cada país?",
+            "description": "Contagem de aeroportos por país"
+        }
+    ]
+
+@api_router.post("/seed-data")
+async def seed_data(request: SeedDataRequest):
+    try:
+        # Clear existing data if requested
+        if request.clear_existing:
+            run_neo4j_query("MATCH (n) DETACH DELETE n")
+        
+        # Create airports
+        airports = [
+            {"code": "GRU", "name": "Aeroporto Internacional de São Paulo/Guarulhos", "city": "São Paulo", "country": "Brazil"},
+            {"code": "CGH", "name": "Aeroporto de Congonhas", "city": "São Paulo", "country": "Brazil"},
+            {"code": "GIG", "name": "Aeroporto Internacional do Rio de Janeiro/Galeão", "city": "Rio de Janeiro", "country": "Brazil"},
+            {"code": "BSB", "name": "Aeroporto Internacional de Brasília", "city": "Brasília", "country": "Brazil"},
+            {"code": "JFK", "name": "John F. Kennedy International Airport", "city": "New York", "country": "USA"},
+            {"code": "LAX", "name": "Los Angeles International Airport", "city": "Los Angeles", "country": "USA"},
+            {"code": "LHR", "name": "London Heathrow Airport", "city": "London", "country": "UK"},
+            {"code": "CDG", "name": "Charles de Gaulle Airport", "city": "Paris", "country": "France"},
+            {"code": "NRT", "name": "Narita International Airport", "city": "Tokyo", "country": "Japan"},
+            {"code": "DXB", "name": "Dubai International Airport", "city": "Dubai", "country": "UAE"}
+        ]
+        
+        for airport in airports:
+            query = """
+            CREATE (a:Airport {code: $code, name: $name, city: $city, country: $country})
+            """
+            run_neo4j_query(query, airport)
+        
+        # Create airlines
+        airlines = [
+            {"code": "LATAM", "name": "LATAM Airlines", "country": "Brazil"},
+            {"code": "GOL", "name": "Gol Linhas Aéreas", "country": "Brazil"},
+            {"code": "AA", "name": "American Airlines", "country": "USA"},
+            {"code": "BA", "name": "British Airways", "country": "UK"},
+            {"code": "EK", "name": "Emirates", "country": "UAE"}
+        ]
+        
+        for airline in airlines:
+            query = """
+            CREATE (al:Airline {code: $code, name: $name, country: $country})
+            """
+            run_neo4j_query(query, airline)
+        
+        # Create routes
+        routes = [
+            {"from": "GRU", "to": "GIG", "airline": "LATAM", "distance": 365, "duration": 1.0},
+            {"from": "GRU", "to": "BSB", "airline": "GOL", "distance": 872, "duration": 1.5},
+            {"from": "GRU", "to": "JFK", "airline": "LATAM", "distance": 7680, "duration": 10.5},
+            {"from": "GIG", "to": "JFK", "airline": "AA", "distance": 7750, "duration": 10.0},
+            {"from": "GRU", "to": "LHR", "airline": "BA", "distance": 9450, "duration": 11.5},
+            {"from": "JFK", "to": "LAX", "airline": "AA", "distance": 3970, "duration": 5.5},
+            {"from": "LHR", "to": "CDG", "airline": "BA", "distance": 340, "duration": 1.0},
+            {"from": "DXB", "to": "LHR", "airline": "EK", "distance": 5470, "duration": 7.0},
+            {"from": "NRT", "to": "LAX", "airline": "AA", "distance": 8800, "duration": 11.0},
+            {"from": "CGH", "to": "GIG", "airline": "GOL", "distance": 365, "duration": 1.0}
+        ]
+        
+        for route in routes:
+            query = """
+            MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
+            CREATE (a)-[:ROUTE {airline: $airline, distance_km: $distance, duration_hours: $duration}]->(b)
+            """
+            run_neo4j_query(query, route)
+        
+        return {"message": "Data seeded successfully", "airports": len(airports), "airlines": len(airlines), "routes": len(routes)}
+    except Exception as e:
+        logging.error(f"Error seeding data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error seeding data: {str(e)}")
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -85,5 +287,5 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+async def shutdown_event():
+    driver.close()
