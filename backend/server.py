@@ -606,6 +606,7 @@ async def seed_brazil_data():
 async def seed_full_dataset():
     """Load complete dataset with all airports and routes - OPTIMIZED"""
     try:
+        # Force rebuild: 2025-12-10 22:08 UTC
         logging.info("Loading full dataset with batch processing...")
         
         # Load airports - remove limit to get ALL airports with IATA codes
