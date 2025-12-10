@@ -77,7 +77,7 @@ if ($ghAvailable) {
         $token = Read-Host "Cole aqui um Personal Access Token (scopes: repo) para criar o repositório (ou deixe vazio para pular)"
     }
     if (-not [string]::IsNullOrWhiteSpace($token)) {
-        $body = @{ name = $repoName; description = "AeroGraph Analytics"; @private = $false } | ConvertTo-Json
+        $body = @{ name = $repoName; description = "AeroGraph Analytics"; private = $false } | ConvertTo-Json
         try {
             $resp = Invoke-RestMethod -Uri "https://api.github.com/user/repos" -Method Post -Headers @{ Authorization = "token $token"; Accept = "application/vnd.github+json" } -Body $body
             Write-Host "✅ Repositório criado via API: $($resp.full_name)" -ForegroundColor Green
