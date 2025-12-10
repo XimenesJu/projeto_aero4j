@@ -641,7 +641,10 @@ async def seed_full_dataset():
         if routes_batch:
             query = """
             UNWIND $batch as route
-            MATCH (a:Airport {code: route.from}), (b:Airport {code: route.to})
+            MATCH (a:Airport)
+            WHERE a.code = route.from
+            MATCH (b:Airport)
+            WHERE b.code = route.to
             MERGE (a)-[r:ROUTE {airline: route.airline}]->(b)
             SET r.distance_km = route.distance
             """

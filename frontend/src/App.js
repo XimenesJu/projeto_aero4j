@@ -176,11 +176,13 @@ const App = () => {
       // Use direct Cypher query endpoint instead of GraphRAG (doesn't require AI)
       const res = await axios.post(`${API}/query`, { query: cypher });
       setResponse(res.data);
+      
+      // Load graph data first to populate the visualization
+      await loadGraphData();
+      
+      // Then switch to query-results mode to filter based on the query
       setGraphMode('query-results');
       setActiveTab('graph'); // Switch to graph tab
-      
-      // Load graph data to update the visualization and statistics
-      await loadGraphData();
       
       toast.success('Visualização carregada!');
     } catch (error) {
