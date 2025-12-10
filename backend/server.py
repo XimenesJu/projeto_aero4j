@@ -499,97 +499,137 @@ async def seed_sample_data():
     return {"message": "Sample data loaded", "airports": len(airports), "airlines": len(airlines), "routes": len(routes)}
 
 async def seed_brazil_data():
-    """Load all Brazil-related airports and routes"""
+    """Load Brazil-related airports, airlines and routes - OPTIMIZED"""
     try:
         logging.info("Loading Brazil dataset...")
         
-        # Load airports from global dataset, filter by Brazil
+        # Load routes first to know which airports actually have connections
+        url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
+        routes_df = pd.read_csv(url_routes)
+        logging.info(f"Read {len(routes_df)} total routes from CSV")
+        
+        # Load all airports to identify Brazilian ones
         url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
         airports_df = pd.read_csv(url_airports)
         
-        # Filter Brazilian airports
-        br_airports = airports_df[airports_df['iso_country'] == 'BR'].copy()
+        # Get all Brazilian airport IATA codes
+        br_airports_all = airports_df[airports_df['iso_country'] == 'BR'].copy()
+        br_codes_all = set(br_airports_all['iata_code'].dropna().str.strip().str.upper().values)
+        logging.info(f"Found {len(br_codes_all)} Brazilian airport codes in airports CSV")
         
-        # Create airports
-        airport_count = 0
+        # Filter routes where BOTH source AND destination are in Brazil (domestic routes)
+        br_routes = routes_df[
+            (routes_df['source_airport'].isin(br_codes_all)) & 
+            (routes_df['destination_apirport'].isin(br_codes_all))
+        ].copy()
+        logging.info(f"Filtered to {len(br_routes)} domestic Brazil routes")
+        
+        # Get unique airports actually used in routes
+        airports_with_routes = set(br_routes['source_airport'].unique()) | set(br_routes['destination_apirport'].unique())
+        logging.info(f"Found {len(airports_with_routes)} airports with active routes")
+        
+        # Filter to only airports that have routes
+        br_airports = br_airports_all[br_airports_all['iata_code'].isin(airports_with_routes)].copy()
+        
+        # Prepare airports batch
+        airports_batch = []
         for _, row in br_airports.iterrows():
-            if pd.notna(row.get('iata_code')) and row.get('iata_code'):
-                query = """
-                MERGE (a:Airport {code: $code})
-                SET a.name = $name, 
-                    a.city = $city, 
-                    a.country = 'Brazil',
-                    a.latitude = $latitude,
-                    a.longitude = $longitude
-                """
-                params = {
-                    'code': row['iata_code'],
+            iata = row.get('iata_code')
+            if pd.notna(iata) and iata:
+                lat, lon = 0.0, 0.0
+                if pd.notna(row.get('coordinates')):
+                    try:
+                        coords = row['coordinates'].split(',')
+                        lon = float(coords[0])
+                        lat = float(coords[1])
+                    except:
+                        pass
+                
+                airports_batch.append({
+                    'code': str(iata).strip().upper(),
                     'name': row.get('name', ''),
                     'city': row.get('municipality', ''),
-                    'latitude': float(row['coordinates'].split(',')[1]) if pd.notna(row.get('coordinates')) else 0.0,
-                    'longitude': float(row['coordinates'].split(',')[0]) if pd.notna(row.get('coordinates')) else 0.0
-                }
-                run_neo4j_query(query, params)
-                airport_count += 1
+                    'country': 'BR',
+                    'latitude': lat,
+                    'longitude': lon
+                })
         
-        # Load routes involving Brazilian airports
-        url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
-        routes_df = pd.read_csv(url_routes)
+        # Batch insert airports
+        airport_count = 0
+        if airports_batch:
+            query = """
+            UNWIND $batch as airport
+            MERGE (a:Airport {code: airport.code})
+            SET a.name = airport.name, 
+                a.city = airport.city, 
+                a.country = airport.country,
+                a.latitude = airport.latitude,
+                a.longitude = airport.longitude
+            """
+            run_neo4j_query(query, {'batch': airports_batch})
+            airport_count = len(airports_batch)
+            logging.info(f"Loaded {airport_count} Brazilian airports with routes")
         
-        # Get list of Brazilian airport codes
-        br_codes = set(br_airports['iata_code'].dropna().values)
-        
-        # Filter routes where source OR destination is in Brazil
-        # Note: CSV has typo 'destination_apirport' instead of 'destination_airport'
-        br_routes = routes_df[
-            (routes_df['source_airport'].isin(br_codes)) | 
-            (routes_df['destination_apirport'].isin(br_codes))
-        ].copy()
-        
-        route_count = 0
+        # Prepare routes batch
+        routes_batch = []
         for _, route in br_routes.iterrows():
-            try:
-                airline = route.get('airline', '')
-                
-                # Skip if airline is Unknown or empty
-                if not airline or str(airline).lower() in ['unknown', 'null', 'none']:
-                    continue
-                
-                query = """
-                MATCH (a:Airport)
-                WHERE a.code = $from
-                MATCH (b:Airport)
-                WHERE b.code = $to
-                MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
-                SET r.distance_km = $distance
-                """
-                params = {
+            airline = route.get('airline', 'Unknown')
+            if airline and str(airline).lower() not in ['', 'null', 'none']:
+                routes_batch.append({
                     'from': route['source_airport'],
                     'to': route['destination_apirport'],
-                    'airline': airline,
+                    'airline': str(airline),
                     'distance': float(route.get('distance', 0))
-                }
-                run_neo4j_query(query, params)
-                route_count += 1
-            except Exception as e:
-                continue
+                })
         
-        # Load Brazilian airlines - BATCH OPTIMIZED
+        # Batch insert routes
+        route_count = 0
+        if routes_batch:
+            query = """
+            UNWIND $batch as route
+            MATCH (a:Airport)
+            WHERE a.code = route.from
+            MATCH (b:Airport)
+            WHERE b.code = route.to
+            MERGE (a)-[r:ROUTE {airline: route.airline}]->(b)
+            SET r.distance_km = route.distance
+            """
+            run_neo4j_query(query, {'batch': routes_batch})
+            route_count = len(routes_batch)
+            logging.info(f"Loaded {route_count} Brazil domestic routes")
+        
+        # Get unique airlines from routes (airlines actually operating in Brazil)
+        unique_airlines = br_routes['airline'].dropna().unique()
+        unique_airlines = [a for a in unique_airlines if str(a).lower() not in ['unknown', '', 'null', 'none']]
+        logging.info(f"Found {len(unique_airlines)} unique airlines operating in Brazil")
+        
+        # Load airline details from CSV
         url_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         airlines_df = pd.read_csv(url_airlines)
         
-        # Prepare batch - extract code, name, country
-        def get_code(row):
-            return row.get('IATA') or row.get('ICAO') or row.get('Code') or 'Unknown'
-        
-        def get_name(row):
-            return row.get('Name') or row.get('Airline') or 'Unknown'
-        
-        airlines_df['code'] = airlines_df.apply(get_code, axis=1)
-        airlines_df['name'] = airlines_df.apply(get_name, axis=1)
-        airlines_df['country'] = airlines_df['Country'].fillna('Brazil') if 'Country' in airlines_df.columns else 'Brazil'
-        
-        airlines_batch = airlines_df[['code', 'name', 'country']].to_dict('records')
+        # Create airline nodes for each unique airline code found in routes
+        airlines_batch = []
+        for airline_code in unique_airlines:
+            # Try to find airline details in CSV
+            airline_row = airlines_df[
+                (airlines_df.get('IATA', pd.Series()).str.upper() == str(airline_code).upper()) |
+                (airlines_df.get('ICAO', pd.Series()).str.upper() == str(airline_code).upper()) |
+                (airlines_df.get('Code', pd.Series()).str.upper() == str(airline_code).upper())
+            ]
+            
+            if not airline_row.empty:
+                row = airline_row.iloc[0]
+                name = row.get('Name') or row.get('Airline') or str(airline_code)
+                country = row.get('Country', 'Unknown')
+            else:
+                name = str(airline_code)
+                country = 'Unknown'
+            
+            airlines_batch.append({
+                'code': str(airline_code).upper(),
+                'name': name,
+                'country': country
+            })
         
         # Batch insert airlines
         airline_count = 0
@@ -601,6 +641,7 @@ async def seed_brazil_data():
             """
             run_neo4j_query(query, {'batch': airlines_batch})
             airline_count = len(airlines_batch)
+            logging.info(f"Loaded {airline_count} airlines operating in Brazil")
         
         logging.info(f"Brazil data loaded: {airport_count} airports, {airline_count} airlines, {route_count} routes")
         return {

@@ -105,12 +105,22 @@ const App = () => {
     try {
       const res = await axios.post(`${API}/graphrag/query`, { query });
       setResponse(res.data);
-      toast.success('Consulta executada com sucesso! Veja o grafo na aba de visualização.');
-      // Switch to query-results mode and graph tab
-      setGraphMode('query-results');
-      setActiveTab('graph');
-      // Refresh graph data after query
-      loadGraphData();
+      
+      // Check if the response has graph-worthy data (nodes/relationships)
+      const hasGraphData = res.data.cypher || 
+                          (res.data.results && res.data.results.length > 0 && 
+                           res.data.results.some(r => typeof r === 'object' && Object.keys(r).length > 0));
+      
+      if (hasGraphData) {
+        // Only switch to graph view if there's data to visualize
+        toast.success('Consulta executada com sucesso! Veja o grafo na aba de visualização.');
+        setGraphMode('query-results');
+        setActiveTab('graph');
+        loadGraphData();
+      } else {
+        // For simple text responses, stay on query tab
+        toast.success('Consulta executada com sucesso!');
+      }
     } catch (error) {
       console.error('Error executing query:', error);
       toast.error('Erro ao executar consulta: ' + (error.response?.data?.detail || error.message));
