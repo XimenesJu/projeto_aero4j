@@ -91,10 +91,10 @@ def call_openai_api(prompt: str) -> str:
         "model": "gpt-3.5-turbo",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
-        "max_tokens": 500
+        "max_tokens": 300
     }
     
-    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    response = requests.post(url, headers=headers, json=payload, timeout=10)
     
     if response.status_code != 200:
         raise Exception(f"OpenAI API error: {response.status_code} - {response.text}")
@@ -112,7 +112,7 @@ def list_available_models():
     params = {"key": gemini_api_key}
     
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=5)
         if response.status_code == 200:
             models = response.json().get("models", [])
             # Get models that support generateContent
@@ -148,7 +148,7 @@ def call_gemini_api(prompt: str, model_name: str) -> str:
         }],
         "generationConfig": {
             "temperature": 0,
-            "maxOutputTokens": 2048
+            "maxOutputTokens": 512
         }
     }
     
@@ -156,7 +156,7 @@ def call_gemini_api(prompt: str, model_name: str) -> str:
         "key": gemini_api_key
     }
     
-    response = requests.post(url, headers=headers, params=params, json=payload, timeout=30)
+    response = requests.post(url, headers=headers, params=params, json=payload, timeout=10)
     
     if response.status_code != 200:
         raise Exception(f"Gemini API error: {response.status_code} - {response.text}")
@@ -175,20 +175,16 @@ async def generate_cypher_query(natural_language_query: str) -> str:
     if not openai_api_key and not gemini_api_key:
         raise HTTPException(status_code=500, detail="No LLM API key configured")
     
-    system_prompt = """You are a Neo4j Cypher query expert. Given a natural language question about an aviation network database, 
-generate a valid Cypher query. The database contains:
+    system_prompt = """Neo4j Cypher expert. Aviation database with:
+- Airport: code, name, city, country
+- Airline: code, name, country
+- ROUTE: airline, distance_km, duration_hours
 
-- Airport nodes with properties: code, name, city, country
-- Airline nodes with properties: code, name, country
-- ROUTE relationships connecting airports with properties: airline, distance_km, duration_hours
-
-Return ONLY the Cypher query, no explanations. Use MATCH and RETURN statements.
-Always limit results to 50 items maximum.
+Return ONLY Cypher query. LIMIT 50.
 
 Examples:
-- "Which airports are in Brazil?" -> MATCH (a:Airport {country: 'Brazil'}) RETURN a LIMIT 50
-- "Show all routes from GRU" -> MATCH (a:Airport {code: 'GRU'})-[r:ROUTE]->(b:Airport) RETURN a, r, b LIMIT 50
-- "Which airlines operate international routes?" -> MATCH (al:Airline)-[:OPERATES]->(a:Airport)-[r:ROUTE]->(b:Airport) WHERE a.country <> b.country RETURN DISTINCT al LIMIT 50
+- "airports in Brazil" -> MATCH (a:Airport {country: 'Brazil'}) RETURN a LIMIT 50
+- "routes from GRU" -> MATCH (a:Airport {code: 'GRU'})-[r:ROUTE]->(b:Airport) RETURN a, r, b LIMIT 50
 """
     
     full_prompt = f"{system_prompt}\n\nQuestion: {natural_language_query}"
@@ -248,8 +244,11 @@ async def root():
 @api_router.post("/graphrag/query", response_model=QueryResponse)
 async def graphrag_query(request: QueryRequest):
     try:
-        # Generate Cypher query using LLM
-        cypher_query = await generate_cypher_query(request.query)
+        # Generate Cypher query using LLM with timeout
+        cypher_query = await asyncio.wait_for(
+            generate_cypher_query(request.query),
+            timeout=15.0  # 15 second timeout for query generation
+        )
         
         # Execute the generated query
         results = run_neo4j_query(cypher_query)
@@ -257,12 +256,10 @@ async def graphrag_query(request: QueryRequest):
         # Generate natural language answer using LLM
         if openai_api_key or gemini_api_key:
             try:
-                answer_prompt = f"""You are a helpful assistant that explains query results from an aviation network database.
-                
-Query: {request.query}
-Results (first 5): {results[:5]}
+                answer_prompt = f"""Query: {request.query}
+Results (first 3): {results[:3]}
 
-Provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sentences."""
+Answer in Portuguese, 2 sentences max."""
                 
                 # Try OpenAI first
                 if openai_api_key:
@@ -286,9 +283,28 @@ Provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sente
             cypher_query=cypher_query,
             results=results[:50]
         )
+    except asyncio.TimeoutError:
+        logging.error(f"Query timed out after 15 seconds")
+        raise HTTPException(status_code=504, detail="Query timed out. Please try a simpler question.")
     except Exception as e:
         logging.error(f"Error in graphrag_query: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
+
+@api_router.post("/query")
+async def direct_cypher_query(request: QueryRequest):
+    """Execute a direct Cypher query without AI processing (for preset buttons)"""
+    try:
+        # Execute the Cypher query directly
+        results = run_neo4j_query(request.query)
+        
+        return {
+            "answer": f"Consulta executada com sucesso. {len(results)} resultados encontrados.",
+            "cypher_query": request.query,
+            "results": results[:50]
+        }
+    except Exception as e:
+        logging.error(f"Error in direct query: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
 
 @api_router.get("/graph/data", response_model=GraphData)
 async def get_graph_data():
