@@ -17,9 +17,16 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [filteredGraphData, setFilteredGraphData] = useState({ nodes: [], links: [] });
   const [examples, setExamples] = useState([]);
   const [dataSeeded, setDataSeeded] = useState(false);
   const [activeTab, setActiveTab] = useState('query');
+  
+  // Graph filter states
+  const [showAirports, setShowAirports] = useState(true);
+  const [showAirlines, setShowAirlines] = useState(true);
+  const [showRoutes, setShowRoutes] = useState(true);
+  const [graphMode, setGraphMode] = useState('all'); // 'all', 'query-results', 'preset'
 
   useEffect(() => {
     loadExamples();
@@ -39,10 +46,55 @@ const App = () => {
     try {
       const res = await axios.get(`${API}/graph/data`);
       setGraphData(res.data);
+      applyGraphFilters(res.data);
     } catch (error) {
       console.error('Error loading graph data:', error);
     }
   };
+
+  // Apply filters to graph data
+  const applyGraphFilters = (data = graphData) => {
+    let filtered = { nodes: [], links: [] };
+
+    // If showing query results, use only nodes from last query
+    if (graphMode === 'query-results' && response?.results) {
+      const queryNodeIds = new Set();
+      response.results.forEach(result => {
+        Object.values(result).forEach(value => {
+          if (value?.code) queryNodeIds.add(value.code);
+          if (value?.name) queryNodeIds.add(value.name);
+        });
+      });
+      
+      filtered.nodes = data.nodes.filter(node => 
+        queryNodeIds.has(node.id) || queryNodeIds.has(node.name)
+      );
+    } else {
+      filtered.nodes = [...data.nodes];
+    }
+
+    // Apply type filters
+    filtered.nodes = filtered.nodes.filter(node => {
+      if (node.label === 'Airport' && !showAirports) return false;
+      if (node.label === 'Airline' && !showAirlines) return false;
+      return true;
+    });
+
+    const nodeIds = new Set(filtered.nodes.map(n => n.id));
+    
+    filtered.links = data.links.filter(link => {
+      if (!showRoutes) return false;
+      return nodeIds.has(link.source.id || link.source) && 
+             nodeIds.has(link.target.id || link.target);
+    });
+
+    setFilteredGraphData(filtered);
+  };
+
+  // Update filters when dependencies change
+  useEffect(() => {
+    applyGraphFilters();
+  }, [showAirports, showAirlines, showRoutes, graphMode, response]);
 
   const handleQuery = async () => {
     if (!query.trim()) return;
@@ -51,7 +103,10 @@ const App = () => {
     try {
       const res = await axios.post(`${API}/graphrag/query`, { query });
       setResponse(res.data);
-      toast.success('Consulta executada com sucesso!');
+      toast.success('Consulta executada com sucesso! Veja o grafo na aba de visualização.');
+      // Switch to query-results mode and graph tab
+      setGraphMode('query-results');
+      setActiveTab('graph');
       // Refresh graph data after query
       loadGraphData();
     } catch (error) {
@@ -88,6 +143,42 @@ const App = () => {
 
   const handleExampleClick = (exampleQuery) => {
     setQuery(exampleQuery);
+  };
+
+  // Preset graph visualizations
+  const loadPresetVisualization = async (preset) => {
+    setLoading(true);
+    try {
+      let cypher = '';
+      
+      switch(preset) {
+        case 'brazil-airports':
+          cypher = "MATCH (a:Airport) WHERE a.country = 'Brazil' RETURN a LIMIT 50";
+          break;
+        case 'major-hubs':
+          cypher = "MATCH (a:Airport)-[r:ROUTE]->() WITH a, count(r) as connections WHERE connections > 10 RETURN a ORDER BY connections DESC LIMIT 30";
+          break;
+        case 'airlines-network':
+          cypher = "MATCH (al:Airline)-[r]-(a:Airport) RETURN al, r, a LIMIT 100";
+          break;
+        case 'international-routes':
+          cypher = "MATCH (a1:Airport)-[r:ROUTE]->(a2:Airport) WHERE a1.country <> a2.country RETURN a1, r, a2 LIMIT 50";
+          break;
+        default:
+          return;
+      }
+
+      const res = await axios.post(`${API}/graphrag/query`, { query: cypher });
+      setResponse(res.data);
+      setGraphMode('query-results');
+      toast.success('Visualização carregada!');
+      loadGraphData();
+    } catch (error) {
+      console.error('Error loading preset:', error);
+      toast.error('Erro ao carregar visualização');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -210,15 +301,141 @@ const App = () => {
           </TabsContent>
 
           {/* Graph Tab */}
-          <TabsContent value="graph" data-testid="graph-content">
+          <TabsContent value="graph" data-testid="graph-content" className="space-y-4">
+            {/* Controls and Stats Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Graph Mode Selector */}
+              <Card className="bg-[#18181b] border-[#27272a] p-4">
+                <h3 className="text-sm font-semibold mb-3 text-cyan-400">Modo de Visualização</h3>
+                <div className="space-y-2">
+                  <Button
+                    onClick={() => setGraphMode('all')}
+                    variant={graphMode === 'all' ? 'default' : 'outline'}
+                    className={`w-full justify-start ${graphMode === 'all' ? 'bg-cyan-600' : 'border-gray-600'}`}
+                  >
+                    🌐 Grafo Completo
+                  </Button>
+                  <Button
+                    onClick={() => setGraphMode('query-results')}
+                    variant={graphMode === 'query-results' ? 'default' : 'outline'}
+                    className={`w-full justify-start ${graphMode === 'query-results' ? 'bg-cyan-600' : 'border-gray-600'}`}
+                    disabled={!response}
+                  >
+                    🔍 Resultados da Busca
+                  </Button>
+                </div>
+              </Card>
+
+              {/* Filters */}
+              <Card className="bg-[#18181b] border-[#27272a] p-4">
+                <h3 className="text-sm font-semibold mb-3 text-cyan-400">Filtros</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showAirports}
+                      onChange={(e) => setShowAirports(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-cyan-600"
+                    />
+                    <span className="text-sm text-slate-300">✈️ Aeroportos</span>
+                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showAirlines}
+                      onChange={(e) => setShowAirlines(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-amber-600"
+                    />
+                    <span className="text-sm text-slate-300">🛫 Companhias Aéreas</span>
+                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showRoutes}
+                      onChange={(e) => setShowRoutes(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-cyan-600"
+                    />
+                    <span className="text-sm text-slate-300">🔗 Rotas</span>
+                  </label>
+                </div>
+              </Card>
+
+              {/* Statistics */}
+              <Card className="bg-[#18181b] border-[#27272a] p-4">
+                <h3 className="text-sm font-semibold mb-3 text-cyan-400">Estatísticas</h3>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Nós:</span>
+                    <span className="text-cyan-400 font-semibold">{filteredGraphData.nodes.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Relacionamentos:</span>
+                    <span className="text-cyan-400 font-semibold">{filteredGraphData.links.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Aeroportos:</span>
+                    <span className="text-cyan-400 font-semibold">
+                      {filteredGraphData.nodes.filter(n => n.label === 'Airport').length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Companhias:</span>
+                    <span className="text-amber-400 font-semibold">
+                      {filteredGraphData.nodes.filter(n => n.label === 'Airline').length}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Preset Visualizations */}
+            <Card className="bg-[#18181b] border-[#27272a] p-4">
+              <h3 className="text-sm font-semibold mb-3 text-cyan-400">Visualizações Pré-definidas</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <Button
+                  onClick={() => loadPresetVisualization('brazil-airports')}
+                  disabled={loading}
+                  variant="outline"
+                  className="border-green-600 text-green-400 hover:bg-green-900/20"
+                >
+                  🇧🇷 Aeroportos BR
+                </Button>
+                <Button
+                  onClick={() => loadPresetVisualization('major-hubs')}
+                  disabled={loading}
+                  variant="outline"
+                  className="border-purple-600 text-purple-400 hover:bg-purple-900/20"
+                >
+                  🏢 Grandes Hubs
+                </Button>
+                <Button
+                  onClick={() => loadPresetVisualization('airlines-network')}
+                  disabled={loading}
+                  variant="outline"
+                  className="border-amber-600 text-amber-400 hover:bg-amber-900/20"
+                >
+                  🛫 Rede de Companhias
+                </Button>
+                <Button
+                  onClick={() => loadPresetVisualization('international-routes')}
+                  disabled={loading}
+                  variant="outline"
+                  className="border-blue-600 text-blue-400 hover:bg-blue-900/20"
+                >
+                  🌍 Rotas Internacionais
+                </Button>
+              </div>
+            </Card>
+
+            {/* Graph Visualization */}
             <Card className="bg-[#18181b] border-[#27272a] p-6">
               <h2 className="text-xl font-semibold mb-4 text-cyan-400" style={{ fontFamily: 'Chivo, sans-serif' }}>
                 Rede de Aviação - Grafo Interativo
               </h2>
               <div className="network-graph-container" style={{ height: '600px' }} data-testid="graph-visualization">
-                {graphData.nodes.length > 0 ? (
+                {filteredGraphData.nodes.length > 0 ? (
                   <ForceGraph2D
-                    graphData={graphData}
+                    graphData={filteredGraphData}
                     nodeLabel="name"
                     nodeAutoColorBy="label"
                     nodeRelSize={6}
@@ -257,7 +474,7 @@ const App = () => {
                   />
                 ) : (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-slate-400">Carregue os dados de exemplo para visualizar o grafo</p>
+                    <p className="text-slate-400">Carregue os dados ou faça uma busca para visualizar o grafo</p>
                   </div>
                 )}
               </div>
