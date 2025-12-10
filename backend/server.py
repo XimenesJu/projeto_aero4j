@@ -664,9 +664,11 @@ async def seed_full_dataset():
         else:
             airport_count = 0
         
-        # Load routes - limit for performance
+        # Load ALL routes - complete dataset (~67k routes)
+        logging.info("Loading routes from CSV...")
         url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
-        routes_df = pd.read_csv(url_routes, nrows=1000)
+        routes_df = pd.read_csv(url_routes)
+        logging.info(f"Read {len(routes_df)} routes from CSV")
         
         # Prepare batch data for routes
         routes_batch = []
@@ -697,15 +699,17 @@ async def seed_full_dataset():
             route_count = len(routes_batch)
             logging.info(f"Loaded {route_count} routes in batch")
         
-        # Load airlines - limit for performance
+        # Load ALL airlines - complete dataset (~547 airlines)
+        logging.info("Loading airlines from CSV...")
         url_base_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         url_info_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/airline_info.csv'
         
-        airlines_base_df = pd.read_csv(url_base_airlines, nrows=200)
-        airlines_info_df = pd.read_csv(url_info_airlines, nrows=200)
+        airlines_base_df = pd.read_csv(url_base_airlines)
+        airlines_info_df = pd.read_csv(url_info_airlines)
         
         # Merge airline data
         airlines_df = pd.concat([airlines_base_df, airlines_info_df], ignore_index=True).drop_duplicates()
+        logging.info(f"Merged {len(airlines_df)} unique airlines from both sources")
         
         # Prepare batch data for airlines
         airlines_batch = []
