@@ -1,0 +1,87 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║            Você perguntou: "Me ensina como pegar a chave api key"        ║
+║                                                                           ║
+║                             ✅ RESPOSTA:                                 ║
+║                                                                           ║
+║              Criei 4 guias diferentes para você escolher!                ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+
+ABRA UM DESTES (todos ensinam a mesma coisa, formato diferente):
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  OPÇÃO 1: Rápido demais!                                             ┃
+┃  Arquivo: backend/API_KEY_RAPIDO.txt                                 ┃
+┃  Tempo: 1 minuto                                                     ┃
+┃  Conteúdo: Só os 3 passos, sem explicação                            ┃
+┃  Melhor para: Quem já conhece API Keys                               ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  OPÇÃO 2: Com Visual!                                                 ┃
+┃  Arquivo: backend/API_KEY_VISUAL.txt                                  ┃
+┃  Tempo: 2 minutos                                                     ┃
+┃  Conteúdo: Passo a passo com desenhos de onde clicar                  ┃
+┃  Melhor para: Quem gosta de ver visualmente onde clicar               ┃
+┃  👉 RECOMENDADO PARA MAIORIA DAS PESSOAS                             ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  OPÇÃO 3: Completo!                                                    ┃
+┃  Arquivo: backend/COMO_OBTER_API_KEY.md                               ┃
+┃  Tempo: 5 minutos                                                      ┃
+┃  Conteúdo: Tudo! Com troubleshooting e dicas de segurança             ┃
+┃  Melhor para: Quem quer aprender tudo sobre API Keys                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  OPÇÃO 4: Não Sei Escolher!                                           ┃
+┃  Arquivo: backend/ESCOLHA_SEU_GUIA.md                                 ┃
+┃  Tempo: 1 minuto                                                      ┃
+┃  Conteúdo: Comparação dos 3 guias acima                               ┃
+┃  Melhor para: Ajudar você a decidir qual ler                          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+
+═══════════════════════════════════════════════════════════════════════════
+
+
+MEU CONSELHO:
+
+  ➡️  Se você quer RÁPIDO
+      → Abra: backend/API_KEY_VISUAL.txt
+      → Tempo: 2 minutos
+
+  ➡️  Se você quer SUPER RÁPIDO
+      → Abra: backend/API_KEY_RAPIDO.txt
+      → Tempo: 1 minuto
+
+  ➡️  Se você quer APRENDER TUDO
+      → Abra: backend/COMO_OBTER_API_KEY.md
+      → Tempo: 5 minutos
+
+
+═══════════════════════════════════════════════════════════════════════════
+
+
+PASSO RESUMIDO (vale para todos os guias):
+
+  1. Abra: https://ai.google.dev
+  2. Clique: Get API Key → Create in new project
+  3. Copie a chave
+  4. Cole em: backend/.env na linha GEMINI_API_KEY=
+  5. Pronto! ✅
+
+
+═══════════════════════════════════════════════════════════════════════════
+
+
+Escolha seu guia e comece! 🚀
+
+Qualquer dúvida, os guias têm tudo explicado!

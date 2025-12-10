@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from neo4j import GraphDatabase
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+import google.generativeai as genai
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -21,8 +21,12 @@ neo4j_database = os.environ['NEO4J_DATABASE']
 
 driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
 
-# Emergent LLM Key
-emergent_llm_key = os.environ['EMERGENT_LLM_KEY']
+# Google Generative AI Configuration
+gemini_api_key = os.environ.get('GEMINI_API_KEY', '')
+if gemini_api_key:
+    genai.configure(api_key=gemini_api_key)
+else:
+    logging.warning("GEMINI_API_KEY not set. LLM features will be limited.")
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -71,16 +75,16 @@ def run_neo4j_query(query: str, parameters: dict = None):
 
 # Helper function to generate Cypher query using LLM
 async def generate_cypher_query(natural_language_query: str) -> str:
-    chat = LlmChat(
-        api_key=emergent_llm_key,
-        session_id="graphrag-session",
-        system_message="""You are a Neo4j Cypher query expert. Given a natural language question about an aviation network database, 
+    """Generate a Cypher query from natural language using Google Gemini"""
+    if not gemini_api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    
+    system_prompt = """You are a Neo4j Cypher query expert. Given a natural language question about an aviation network database, 
 generate a valid Cypher query. The database contains:
 
 - Airport nodes with properties: code, name, city, country
 - Airline nodes with properties: code, name, country
 - ROUTE relationships connecting airports with properties: airline, distance_km, duration_hours
-- OPERATES relationships from airlines to routes
 
 Return ONLY the Cypher query, no explanations. Use MATCH and RETURN statements.
 Always limit results to 50 items maximum.
@@ -90,19 +94,25 @@ Examples:
 - "Show all routes from GRU" -> MATCH (a:Airport {code: 'GRU'})-[r:ROUTE]->(b:Airport) RETURN a, r, b LIMIT 50
 - "Which airlines operate international routes?" -> MATCH (al:Airline)-[:OPERATES]->(a:Airport)-[r:ROUTE]->(b:Airport) WHERE a.country <> b.country RETURN DISTINCT al LIMIT 50
 """
-    ).with_model("gemini", "gemini-2.5-flash")
     
-    user_message = UserMessage(text=natural_language_query)
-    response = await chat.send_message(user_message)
-    
-    # Clean up the response to extract only the query
-    cypher_query = response.strip()
-    # Remove markdown code blocks if present
-    if cypher_query.startswith('```'):
-        lines = cypher_query.split('\n')
-        cypher_query = '\n'.join(lines[1:-1] if lines[-1].startswith('```') else lines[1:])
-    
-    return cypher_query.strip()
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(
+            f"{system_prompt}\n\nQuestion: {natural_language_query}",
+            generation_config=genai.types.GenerationConfig(temperature=0)
+        )
+        
+        cypher_query = response.text.strip()
+        
+        # Remove markdown code blocks if present
+        if cypher_query.startswith('```'):
+            lines = cypher_query.split('\n')
+            cypher_query = '\n'.join(lines[1:-1] if len(lines) > 2 and lines[-1].strip() == '```' else lines[1:])
+        
+        return cypher_query.strip()
+    except Exception as e:
+        logging.error(f"Error generating Cypher query: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate query: {str(e)}")
 
 @api_router.get("/")
 async def root():
@@ -117,18 +127,24 @@ async def graphrag_query(request: QueryRequest):
         # Execute the generated query
         results = run_neo4j_query(cypher_query)
         
-        # Generate natural language answer
-        chat = LlmChat(
-            api_key=emergent_llm_key,
-            session_id="answer-session",
-            system_message="You are a helpful assistant that explains query results from an aviation network database in natural language. Be concise and informative."
-        ).with_model("gemini", "gemini-2.5-flash")
-        
-        answer_prompt = f"""Based on the query '{request.query}' and the results: {results[:5]}, 
-provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sentences."""
-        
-        answer_message = UserMessage(text=answer_prompt)
-        answer = await chat.send_message(answer_message)
+        # Generate natural language answer using Gemini
+        if gemini_api_key:
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                answer_prompt = f"""You are a helpful assistant that explains query results from an aviation network database.
+                
+Query: {request.query}
+Results (first 5): {results[:5]}
+
+Provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sentences."""
+                
+                answer_response = model.generate_content(answer_prompt)
+                answer = answer_response.text
+            except Exception as e:
+                logging.warning(f"Could not generate answer with LLM: {str(e)}. Using basic response.")
+                answer = f"Found {len(results)} results for your query."
+        else:
+            answer = f"Found {len(results)} results for your query."
         
         return QueryResponse(
             answer=answer,

@@ -1,0 +1,27 @@
+COMO OBTER A CHAVE API - VERSÃO SUPER SIMPLES
+═════════════════════════════════════════════════════════════════
+
+3 PASSOS:
+
+1️⃣  ABRIR LINK
+    https://ai.google.dev
+
+2️⃣  CLICAR EM "Get API Key"
+    └─ Depois: "Create API Key in new project"
+
+3️⃣  COPIAR E COLAR NO backend/.env
+    GEMINI_API_KEY=sua_chave_aqui
+
+═════════════════════════════════════════════════════════════════
+
+✅ PRONTO!
+
+Você tem a chave configurada.
+
+═════════════════════════════════════════════════════════════════
+
+PARA MAIS DETALHES:
+  └─ Leia: backend/COMO_OBTER_API_KEY.md
+  └─ Leia: backend/API_KEY_VISUAL.txt
+
+═════════════════════════════════════════════════════════════════
