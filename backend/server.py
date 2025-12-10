@@ -608,23 +608,21 @@ async def seed_full_dataset():
     try:
         logging.info("Loading full dataset with batch processing...")
         
-        # Load airports - limit to first 2000 rows and filter by type
+        # Load airports - increase limit to get more airports with IATA codes
         url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
-        airports_df = pd.read_csv(url_airports, nrows=2000)
+        airports_df = pd.read_csv(url_airports, nrows=5000)
         
-        # Prepare batch data for airports (only large and medium airports with IATA codes)
+        # Prepare batch data for airports (only airports with valid IATA codes)
         airports_batch = []
         total_rows = len(airports_df)
         logging.info(f"Processing {total_rows} airport rows from CSV...")
         
         for idx, row in airports_df.iterrows():
-            # Filter for airports with IATA codes and large/medium types
-            has_iata = pd.notna(row.get('iata_code')) and row.get('iata_code')
-            has_type = pd.notna(row.get('type'))
-            airport_type = row.get('type', '') if has_type else ''
-            is_major = airport_type in ['large_airport', 'medium_airport']
+            # Filter for airports with valid IATA codes (3-letter codes)
+            iata_code = row.get('iata_code')
+            has_iata = pd.notna(iata_code) and iata_code and len(str(iata_code)) == 3
             
-            if has_iata and has_type and is_major:
+            if has_iata:
                 # Parse coordinates
                 lat, lon = 0.0, 0.0
                 if pd.notna(row.get('coordinates')):
@@ -636,7 +634,7 @@ async def seed_full_dataset():
                         pass
                 
                 airports_batch.append({
-                    'code': row['iata_code'],
+                    'code': iata_code,
                     'name': row.get('name', ''),
                     'city': row.get('municipality', ''),
                     'country': row.get('iso_country', ''),
@@ -644,7 +642,7 @@ async def seed_full_dataset():
                     'longitude': lon
                 })
         
-        logging.info(f"Filtered to {len(airports_batch)} major airports with IATA codes")
+        logging.info(f"Filtered to {len(airports_batch)} airports with valid IATA codes")
         
         # Batch insert all airports at once
         if airports_batch:
