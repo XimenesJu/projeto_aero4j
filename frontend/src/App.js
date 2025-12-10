@@ -302,9 +302,44 @@ const App = () => {
                   <Card className="bg-[#18181b] border-[#27272a] p-6 message-bubble">
                     <h3 className="text-lg font-semibold mb-3 text-amber-500">Resultados ({response.results.length})</h3>
                     <div className="overflow-x-auto" data-testid="query-results">
-                      <pre className="text-sm text-slate-400" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                        {JSON.stringify(response.results.slice(0, 10), null, 2)}
-                      </pre>
+                      <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-cyan-400 uppercase bg-[#09090b] border-b border-[#27272a]">
+                          <tr>
+                            {Object.keys(response.results[0] || {}).map((key) => (
+                              <th key={key} scope="col" className="px-6 py-3 font-semibold">
+                                {key}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {response.results.slice(0, 20).map((result, idx) => (
+                            <tr key={idx} className="border-b border-[#27272a] hover:bg-[#27272a]/30 transition-colors">
+                              {Object.keys(response.results[0] || {}).map((key) => (
+                                <td key={key} className="px-6 py-4 text-slate-300">
+                                  {typeof result[key] === 'object' && result[key] !== null
+                                    ? Object.entries(result[key])
+                                        .filter(([k, v]) => v !== null && v !== '' && String(v).toLowerCase() !== 'unknown')
+                                        .map(([k, v]) => (
+                                          <div key={k} className="mb-1">
+                                            <span className="text-amber-400 text-xs">{k}:</span>{' '}
+                                            <span className="text-slate-200">{String(v)}</span>
+                                          </div>
+                                        ))
+                                    : result[key] !== null && result[key] !== '' && String(result[key]).toLowerCase() !== 'unknown'
+                                    ? String(result[key])
+                                    : '-'}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {response.results.length > 20 && (
+                        <p className="text-xs text-slate-500 mt-3 text-center">
+                          Mostrando 20 de {response.results.length} resultados
+                        </p>
+                      )}
                     </div>
                   </Card>
                 )}

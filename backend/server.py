@@ -297,10 +297,26 @@ async def direct_cypher_query(request: QueryRequest):
         # Execute the Cypher query directly
         results = run_neo4j_query(request.query)
         
+        # Filter out null and 'Unknown' values from results
+        filtered_results = []
+        for result in results[:50]:
+            filtered_result = {}
+            for key, value in result.items():
+                if isinstance(value, dict):
+                    # Filter nested properties
+                    filtered_nested = {k: v for k, v in value.items() 
+                                     if v is not None and v != '' and str(v).lower() not in ['unknown', 'null', 'none']}
+                    if filtered_nested:
+                        filtered_result[key] = filtered_nested
+                elif value is not None and value != '' and str(value).lower() not in ['unknown', 'null', 'none']:
+                    filtered_result[key] = value
+            if filtered_result:
+                filtered_results.append(filtered_result)
+        
         return {
-            "answer": f"Consulta executada com sucesso. {len(results)} resultados encontrados.",
+            "answer": f"Consulta executada com sucesso. {len(filtered_results)} resultados encontrados.",
             "cypher_query": request.query,
-            "results": results[:50]
+            "results": filtered_results
         }
     except Exception as e:
         logging.error(f"Error in direct query: {str(e)}")
@@ -332,11 +348,18 @@ async def get_graph_data():
             node_id = node['id']
             label = node['label']
             props = node['properties']
+            
+            # Filter out null and 'Unknown' values
+            filtered_props = {}
+            for key, value in props.items():
+                if value is not None and value != '' and str(value).lower() not in ['unknown', 'null', 'none']:
+                    filtered_props[key] = value
+            
             nodes.append({
                 'id': str(node_id),
                 'label': label,
-                'name': props.get('name') or props.get('code', f"{label}_{node_id}"),
-                'properties': props
+                'name': filtered_props.get('name') or filtered_props.get('code', f"{label}_{node_id}"),
+                'properties': filtered_props
             })
         
         # Format links
@@ -528,6 +551,12 @@ async def seed_brazil_data():
         route_count = 0
         for _, route in br_routes.iterrows():
             try:
+                airline = route.get('airline', '')
+                
+                # Skip if airline is Unknown or empty
+                if not airline or str(airline).lower() in ['unknown', 'null', 'none']:
+                    continue
+                
                 query = """
                 MATCH (a:Airport)
                 WHERE a.code = $from
@@ -539,7 +568,7 @@ async def seed_brazil_data():
                 params = {
                     'from': route['source_airport'],
                     'to': route['destination_apirport'],
-                    'airline': route.get('airline', 'Unknown'),
+                    'airline': airline,
                     'distance': float(route.get('distance', 0))
                 }
                 run_neo4j_query(query, params)
@@ -683,11 +712,22 @@ async def seed_full_dataset():
         airlines_batch = []
         for _, airline in airlines_df.iterrows():
             try:
-                airlines_batch.append({
-                    'code': airline.get('IATA', airline.get('ICAO', airline.get('Code', 'Unknown'))),
-                    'name': airline.get('Name', airline.get('Airline', 'Unknown')),
-                    'country': airline.get('Country', 'Unknown')
-                })
+                code = airline.get('IATA', airline.get('ICAO', airline.get('Code', '')))
+                name = airline.get('Name', airline.get('Airline', ''))
+                country = airline.get('Country', '')
+                
+                # Skip if essential fields are missing or 'Unknown'
+                if (not code or str(code).lower() in ['unknown', 'null', 'none'] or
+                    not name or str(name).lower() in ['unknown', 'null', 'none']):
+                    continue
+                
+                airline_data = {'code': code, 'name': name}
+                
+                # Only add country if it's valid
+                if country and str(country).lower() not in ['unknown', 'null', 'none']:
+                    airline_data['country'] = country
+                
+                airlines_batch.append(airline_data)
             except:
                 continue
         
@@ -697,7 +737,8 @@ async def seed_full_dataset():
             query = """
             UNWIND $batch as airline
             MERGE (al:Airline {code: airline.code})
-            SET al.name = airline.name, al.country = airline.country
+            SET al.name = airline.name
+            SET al.country = CASE WHEN airline.country IS NOT NULL THEN airline.country ELSE al.country END
             """
             run_neo4j_query(query, {'batch': airlines_batch})
             airline_count = len(airlines_batch)
