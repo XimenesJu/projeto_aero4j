@@ -575,9 +575,9 @@ async def seed_full_dataset():
     try:
         logging.info("Loading full dataset with batch processing...")
         
-        # Load airports - limit to first 1000 for performance
+        # Load airports - limit to first 500 for performance and to avoid timeout
         url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
-        airports_df = pd.read_csv(url_airports, nrows=1000)
+        airports_df = pd.read_csv(url_airports, nrows=500)
         
         # Prepare batch data for airports
         airports_batch = []
@@ -621,7 +621,7 @@ async def seed_full_dataset():
         
         # Load routes - limit for performance
         url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
-        routes_df = pd.read_csv(url_routes, nrows=2000)
+        routes_df = pd.read_csv(url_routes, nrows=1000)
         
         # Prepare batch data for routes
         routes_batch = []
@@ -653,8 +653,8 @@ async def seed_full_dataset():
         url_base_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         url_info_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/airline_info.csv'
         
-        airlines_base_df = pd.read_csv(url_base_airlines, nrows=500)
-        airlines_info_df = pd.read_csv(url_info_airlines, nrows=500)
+        airlines_base_df = pd.read_csv(url_base_airlines, nrows=200)
+        airlines_info_df = pd.read_csv(url_info_airlines, nrows=200)
         
         # Merge airline data
         airlines_df = pd.concat([airlines_base_df, airlines_info_df], ignore_index=True).drop_duplicates()

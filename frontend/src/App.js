@@ -173,8 +173,11 @@ const App = () => {
       setResponse(res.data);
       setGraphMode('query-results');
       setActiveTab('graph'); // Switch to graph tab
+      
+      // Load graph data to update the visualization and statistics
+      await loadGraphData();
+      
       toast.success('Visualização carregada!');
-      // Don't call loadGraphData() here - it overwrites the preset results!
     } catch (error) {
       console.error('Error loading preset:', error);
       toast.error('Erro ao carregar visualização: ' + (error.response?.data?.detail || error.message));
