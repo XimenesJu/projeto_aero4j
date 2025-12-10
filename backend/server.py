@@ -466,7 +466,10 @@ async def seed_sample_data():
     
     for route in routes:
         query = """
-        MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
+        MATCH (a:Airport)
+        WHERE a.code = $from
+        MATCH (b:Airport)
+        WHERE b.code = $to
         MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
         SET r.distance_km = $distance, r.duration_hours = $duration
         """
@@ -526,7 +529,10 @@ async def seed_brazil_data():
         for _, route in br_routes.iterrows():
             try:
                 query = """
-                MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
+                MATCH (a:Airport)
+                WHERE a.code = $from
+                MATCH (b:Airport)
+                WHERE b.code = $to
                 MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
                 SET r.distance_km = $distance
                 """
