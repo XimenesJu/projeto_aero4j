@@ -571,99 +571,117 @@ async def seed_brazil_data():
         raise HTTPException(status_code=500, detail=f"Error loading Brazil data: {str(e)}")
 
 async def seed_full_dataset():
-    """Load complete dataset with all airports and routes"""
+    """Load complete dataset with all airports and routes - OPTIMIZED"""
     try:
-        logging.info("Loading full dataset...")
+        logging.info("Loading full dataset with batch processing...")
         
-        # Load all airports
+        # Load airports - limit to first 1000 for performance
         url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
-        airports_df = pd.read_csv(url_airports)
+        airports_df = pd.read_csv(url_airports, nrows=1000)
         
-        airport_count = 0
+        # Prepare batch data for airports
+        airports_batch = []
         for _, row in airports_df.iterrows():
             if pd.notna(row.get('iata_code')) and row.get('iata_code'):
-                try:
-                    query = """
-                    MERGE (a:Airport {code: $code})
-                    SET a.name = $name, 
-                        a.city = $city, 
-                        a.country = $country,
-                        a.latitude = $latitude,
-                        a.longitude = $longitude
-                    """
-                    
-                    # Parse coordinates
-                    lat, lon = 0.0, 0.0
-                    if pd.notna(row.get('coordinates')):
-                        try:
-                            coords = row['coordinates'].split(',')
-                            lon = float(coords[0])
-                            lat = float(coords[1])
-                        except:
-                            pass
-                    
-                    params = {
-                        'code': row['iata_code'],
-                        'name': row.get('name', ''),
-                        'city': row.get('municipality', ''),
-                        'country': row.get('iso_country', ''),
-                        'latitude': lat,
-                        'longitude': lon
-                    }
-                    run_neo4j_query(query, params)
-                    airport_count += 1
-                except Exception as e:
-                    continue
+                # Parse coordinates
+                lat, lon = 0.0, 0.0
+                if pd.notna(row.get('coordinates')):
+                    try:
+                        coords = row['coordinates'].split(',')
+                        lon = float(coords[0])
+                        lat = float(coords[1])
+                    except:
+                        pass
+                
+                airports_batch.append({
+                    'code': row['iata_code'],
+                    'name': row.get('name', ''),
+                    'city': row.get('municipality', ''),
+                    'country': row.get('iso_country', ''),
+                    'latitude': lat,
+                    'longitude': lon
+                })
         
-        # Load all routes
+        # Batch insert all airports at once
+        if airports_batch:
+            query = """
+            UNWIND $batch as airport
+            MERGE (a:Airport {code: airport.code})
+            SET a.name = airport.name, 
+                a.city = airport.city, 
+                a.country = airport.country,
+                a.latitude = airport.latitude,
+                a.longitude = airport.longitude
+            """
+            run_neo4j_query(query, {'batch': airports_batch})
+            airport_count = len(airports_batch)
+            logging.info(f"Loaded {airport_count} airports in batch")
+        else:
+            airport_count = 0
+        
+        # Load routes - limit for performance
         url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
-        routes_df = pd.read_csv(url_routes)
+        routes_df = pd.read_csv(url_routes, nrows=2000)
         
-        route_count = 0
+        # Prepare batch data for routes
+        routes_batch = []
         for _, route in routes_df.iterrows():
             try:
-                query = """
-                MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
-                MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
-                SET r.distance_km = $distance
-                """
-                params = {
+                routes_batch.append({
                     'from': route['source_airport'],
                     'to': route['destination_apirport'],
                     'airline': route.get('airline', 'Unknown'),
                     'distance': float(route.get('distance', 0))
-                }
-                run_neo4j_query(query, params)
-                route_count += 1
-            except Exception as e:
+                })
+            except:
                 continue
         
-        # Load all airlines
+        # Batch insert routes
+        route_count = 0
+        if routes_batch:
+            query = """
+            UNWIND $batch as route
+            MATCH (a:Airport {code: route.from}), (b:Airport {code: route.to})
+            MERGE (a)-[r:ROUTE {airline: route.airline}]->(b)
+            SET r.distance_km = route.distance
+            """
+            run_neo4j_query(query, {'batch': routes_batch})
+            route_count = len(routes_batch)
+            logging.info(f"Loaded {route_count} routes in batch")
+        
+        # Load airlines - limit for performance
         url_base_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         url_info_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/airline_info.csv'
         
-        airlines_base_df = pd.read_csv(url_base_airlines)
-        airlines_info_df = pd.read_csv(url_info_airlines)
+        airlines_base_df = pd.read_csv(url_base_airlines, nrows=500)
+        airlines_info_df = pd.read_csv(url_info_airlines, nrows=500)
         
         # Merge airline data
         airlines_df = pd.concat([airlines_base_df, airlines_info_df], ignore_index=True).drop_duplicates()
         
-        airline_count = 0
+        # Prepare batch data for airlines
+        airlines_batch = []
         for _, airline in airlines_df.iterrows():
             try:
-                query = """
-                MERGE (al:Airline {code: $code})
-                SET al.name = $name, al.country = $country
-                """
-                params = {
+                airlines_batch.append({
                     'code': airline.get('IATA', airline.get('ICAO', airline.get('Code', 'Unknown'))),
                     'name': airline.get('Name', airline.get('Airline', 'Unknown')),
                     'country': airline.get('Country', 'Unknown')
-                }
-                run_neo4j_query(query, params)
-                airline_count += 1
-            except Exception as e:
+                })
+            except:
                 continue
+        
+        # Batch insert airlines
+        airline_count = 0
+        if airlines_batch:
+            query = """
+            UNWIND $batch as airline
+            MERGE (al:Airline {code: airline.code})
+            SET al.name = airline.name, al.country = airline.country
+            """
+            run_neo4j_query(query, {'batch': airlines_batch})
+            airline_count = len(airlines_batch)
+            logging.info(f"Loaded {airline_count} airlines in batch")
         
         logging.info(f"Full dataset loaded: {airport_count} airports, {airline_count} airlines, {route_count} routes")
         return {
