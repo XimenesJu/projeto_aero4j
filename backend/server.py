@@ -73,9 +73,44 @@ def run_neo4j_query(query: str, parameters: dict = None):
             records.append(record_dict)
         return records
 
+# Helper function to get available model
+def get_available_gemini_model():
+    """Get the first available Gemini model that supports generateContent"""
+    try:
+        # Try common model names in order of preference
+        model_names = [
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+            'gemini-pro',
+            'gemini-1.0-pro',
+        ]
+        
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                # Test if model works with a simple prompt
+                test_response = model.generate_content("Hello", generation_config=genai.types.GenerationConfig(temperature=0))
+                if test_response and test_response.text:
+                    logging.info(f"Using Gemini model: {model_name}")
+                    return model_name
+            except Exception as e:
+                logging.warning(f"Model {model_name} not available: {str(e)}")
+                continue
+        
+        # If no model works, raise error
+        raise Exception("No available Gemini model found")
+    except Exception as e:
+        logging.error(f"Error finding available model: {str(e)}")
+        raise
+
+# Cache the working model name
+_cached_model_name = None
+
 # Helper function to generate Cypher query using LLM
 async def generate_cypher_query(natural_language_query: str) -> str:
     """Generate a Cypher query from natural language using Google Gemini"""
+    global _cached_model_name
+    
     if not gemini_api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
     
@@ -96,7 +131,11 @@ Examples:
 """
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-001')
+        # Get or cache the working model name
+        if _cached_model_name is None:
+            _cached_model_name = get_available_gemini_model()
+        
+        model = genai.GenerativeModel(_cached_model_name)
         response = model.generate_content(
             f"{system_prompt}\n\nQuestion: {natural_language_query}",
             generation_config=genai.types.GenerationConfig(temperature=0)
@@ -112,6 +151,8 @@ Examples:
         return cypher_query.strip()
     except Exception as e:
         logging.error(f"Error generating Cypher query: {str(e)}")
+        # Reset cache on error to retry model discovery
+        _cached_model_name = None
         raise HTTPException(status_code=500, detail=f"Failed to generate query: {str(e)}")
 
 @api_router.get("/")
@@ -130,7 +171,11 @@ async def graphrag_query(request: QueryRequest):
         # Generate natural language answer using Gemini
         if gemini_api_key:
             try:
-                model = genai.GenerativeModel('gemini-1.5-flash-001')
+                # Use the same cached model
+                if _cached_model_name is None:
+                    _cached_model_name = get_available_gemini_model()
+                
+                model = genai.GenerativeModel(_cached_model_name)
                 answer_prompt = f"""You are a helpful assistant that explains query results from an aviation network database.
                 
 Query: {request.query}
