@@ -578,10 +578,17 @@ async def seed_brazil_data():
         url_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         airlines_df = pd.read_csv(url_airlines)
         
-        # Prepare batch
-        airlines_df['code'] = airlines_df.get('IATA', airlines_df.get('ICAO', '')).fillna('Unknown')
-        airlines_df['name'] = airlines_df.get('Name', '').fillna('Unknown')
-        airlines_df['country'] = airlines_df.get('Country', '').fillna('Brazil')
+        # Prepare batch - extract code, name, country
+        def get_code(row):
+            return row.get('IATA') or row.get('ICAO') or row.get('Code') or 'Unknown'
+        
+        def get_name(row):
+            return row.get('Name') or row.get('Airline') or 'Unknown'
+        
+        airlines_df['code'] = airlines_df.apply(get_code, axis=1)
+        airlines_df['name'] = airlines_df.apply(get_name, axis=1)
+        airlines_df['country'] = airlines_df['Country'].fillna('Brazil') if 'Country' in airlines_df.columns else 'Brazil'
+        
         airlines_batch = airlines_df[['code', 'name', 'country']].to_dict('records')
         
         # Batch insert airlines
