@@ -96,7 +96,7 @@ Examples:
 """
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash-001')
         response = model.generate_content(
             f"{system_prompt}\n\nQuestion: {natural_language_query}",
             generation_config=genai.types.GenerationConfig(temperature=0)
@@ -130,7 +130,7 @@ async def graphrag_query(request: QueryRequest):
         # Generate natural language answer using Gemini
         if gemini_api_key:
             try:
-                model = genai.GenerativeModel('gemini-pro')
+                model = genai.GenerativeModel('gemini-1.5-flash-001')
                 answer_prompt = f"""You are a helpful assistant that explains query results from an aviation network database.
                 
 Query: {request.query}
