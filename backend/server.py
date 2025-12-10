@@ -627,16 +627,16 @@ async def seed_full_dataset():
                 iata_code = str(iata_code).strip().upper()
                 # IATA codes are exactly 3 letters
                 if len(iata_code) == 3 and iata_code.isalpha():
-                # Parse coordinates
-                lat, lon = 0.0, 0.0
-                if pd.notna(row.get('coordinates')):
-                    try:
-                        coords = row['coordinates'].split(',')
-                        lon = float(coords[0])
-                        lat = float(coords[1])
-                    except:
-                        pass
-                
+                    # Parse coordinates
+                    lat, lon = 0.0, 0.0
+                    if pd.notna(row.get('coordinates')):
+                        try:
+                            coords = row['coordinates'].split(',')
+                            lon = float(coords[0])
+                            lat = float(coords[1])
+                        except:
+                            pass
+                    
                     airports_batch.append({
                         'code': iata_code,
                         'name': row.get('name', ''),
