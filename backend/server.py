@@ -609,44 +609,27 @@ async def seed_full_dataset():
         # Force rebuild: 2025-12-10 22:08 UTC
         logging.info("Loading full dataset with batch processing...")
         
-        # Load airports - remove limit to get ALL airports with IATA codes
+        # Load airports - optimized with vectorized operations
         url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
         airports_df = pd.read_csv(url_airports)
         
-        # Prepare batch data for airports (only airports with valid IATA codes)
-        airports_batch = []
-        total_rows = len(airports_df)
-        logging.info(f"Processing {total_rows} airport rows from CSV...")
+        logging.info(f"Processing {len(airports_df)} airport rows from CSV...")
         
-        for idx, row in airports_df.iterrows():
-            # Filter for airports with valid IATA codes (3-letter codes)
-            iata_code = row.get('iata_code')
-            
-            # Clean and validate IATA code
-            if pd.notna(iata_code) and iata_code:
-                iata_code = str(iata_code).strip().upper()
-                # IATA codes are exactly 3 letters
-                if len(iata_code) == 3 and iata_code.isalpha():
-                    # Parse coordinates
-                    lat, lon = 0.0, 0.0
-                    if pd.notna(row.get('coordinates')):
-                        try:
-                            coords = row['coordinates'].split(',')
-                            lon = float(coords[0])
-                            lat = float(coords[1])
-                        except:
-                            pass
-                    
-                    airports_batch.append({
-                        'code': iata_code,
-                        'name': row.get('name', ''),
-                        'city': row.get('municipality', ''),
-                        'country': row.get('iso_country', ''),
-                        'latitude': lat,
-                        'longitude': lon
-                    })
+        # Filter for valid IATA codes using vectorized operations
+        airports_df = airports_df[airports_df['iata_code'].notna()].copy()
+        airports_df['iata_code'] = airports_df['iata_code'].str.strip().str.upper()
+        airports_df = airports_df[airports_df['iata_code'].str.len() == 3]
+        airports_df = airports_df[airports_df['iata_code'].str.isalpha()]
         
-        logging.info(f"Filtered to {len(airports_batch)} airports with valid IATA codes from {total_rows} rows")
+        # Parse coordinates vectorized
+        airports_df[['lon', 'lat']] = airports_df['coordinates'].str.split(',', expand=True).astype(float, errors='ignore').fillna(0.0)
+        
+        # Prepare batch data
+        airports_batch = airports_df[['iata_code', 'name', 'municipality', 'iso_country', 'lat', 'lon']].rename(
+            columns={'iata_code': 'code', 'municipality': 'city', 'iso_country': 'country', 'lat': 'latitude', 'lon': 'longitude'}
+        ).fillna('').to_dict('records')
+        
+        logging.info(f"Filtered to {len(airports_batch)} airports with valid IATA codes")
         
         # Batch insert all airports at once
         if airports_batch:
@@ -665,24 +648,19 @@ async def seed_full_dataset():
         else:
             airport_count = 0
         
-        # Load ALL routes - complete dataset (~67k routes)
+        # Load ALL routes - optimized
         logging.info("Loading routes from CSV...")
         url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
         routes_df = pd.read_csv(url_routes)
         logging.info(f"Read {len(routes_df)} routes from CSV")
         
-        # Prepare batch data for routes
-        routes_batch = []
-        for _, route in routes_df.iterrows():
-            try:
-                routes_batch.append({
-                    'from': route['source_airport'],
-                    'to': route['destination_apirport'],
-                    'airline': route.get('airline', 'Unknown'),
-                    'distance': float(route.get('distance', 0))
-                })
-            except:
-                continue
+        # Prepare batch data with vectorized operations
+        routes_df['airline'] = routes_df['airline'].fillna('Unknown')
+        routes_df['distance'] = pd.to_numeric(routes_df['distance'], errors='coerce').fillna(0.0)
+        
+        routes_batch = routes_df[['source_airport', 'destination_apirport', 'airline', 'distance']].rename(
+            columns={'source_airport': 'from', 'destination_apirport': 'to'}
+        ).to_dict('records')
         
         # Batch insert routes
         route_count = 0
@@ -700,7 +678,7 @@ async def seed_full_dataset():
             route_count = len(routes_batch)
             logging.info(f"Loaded {route_count} routes in batch")
         
-        # Load ALL airlines - complete dataset (~547 airlines)
+        # Load ALL airlines - optimized
         logging.info("Loading airlines from CSV...")
         url_base_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         url_info_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/airline_info.csv'
@@ -708,37 +686,22 @@ async def seed_full_dataset():
         airlines_base_df = pd.read_csv(url_base_airlines)
         airlines_info_df = pd.read_csv(url_info_airlines)
         
-        # Merge airline data
+        # Merge and deduplicate
         airlines_df = pd.concat([airlines_base_df, airlines_info_df], ignore_index=True).drop_duplicates()
         logging.info(f"Merged {len(airlines_df)} unique airlines from both sources")
         
-        # Prepare batch data for airlines
-        airlines_batch = []
-        for _, airline in airlines_df.iterrows():
-            try:
-                code = airline.get('IATA', airline.get('ICAO', airline.get('Code', '')))
-                name = airline.get('Name', airline.get('Airline', ''))
-                country = airline.get('Country', '')
-                
-                # Skip ONLY if code AND name are both empty (not just "Unknown")
-                if not code and not name:
-                    continue
-                
-                # Use "Unknown" as fallback if empty
-                if not code:
-                    code = 'Unknown'
-                if not name:
-                    name = 'Unknown'
-                
-                airline_data = {'code': code, 'name': name}
-                
-                # Add country if available
-                if country:
-                    airline_data['country'] = country
-                
-                airlines_batch.append(airline_data)
-            except:
-                continue
+        # Combine code columns
+        airlines_df['code'] = airlines_df.get('IATA', airlines_df.get('ICAO', airlines_df.get('Code', ''))).fillna('Unknown')
+        airlines_df['name'] = airlines_df.get('Name', airlines_df.get('Airline', '')).fillna('Unknown')
+        airlines_df['country'] = airlines_df.get('Country', '').fillna('')
+        
+        # Filter out completely empty rows
+        airlines_df = airlines_df[(airlines_df['code'] != '') | (airlines_df['name'] != '')]
+        airlines_df['code'] = airlines_df['code'].replace('', 'Unknown')
+        airlines_df['name'] = airlines_df['name'].replace('', 'Unknown')
+        
+        # Prepare batch
+        airlines_batch = airlines_df[['code', 'name', 'country']].to_dict('records')
         
         # Batch insert airlines
         airline_count = 0
