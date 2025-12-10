@@ -123,7 +123,7 @@ const App = () => {
     setLoading(true);
     try {
       const res = await axios.post(`${API}/seed-data`, { 
-        clear_existing: true,
+        clear_existing: false,  // Changed to false to preserve existing data
         region: region 
       });
       
