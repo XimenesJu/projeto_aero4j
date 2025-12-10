@@ -168,14 +168,16 @@ const App = () => {
           return;
       }
 
-      const res = await axios.post(`${API}/graphrag/query`, { query: cypher });
+      // Use direct Cypher query endpoint instead of GraphRAG (doesn't require AI)
+      const res = await axios.post(`${API}/query`, { query: cypher });
       setResponse(res.data);
       setGraphMode('query-results');
+      setActiveTab('graph'); // Switch to graph tab
       toast.success('Visualização carregada!');
       loadGraphData();
     } catch (error) {
       console.error('Error loading preset:', error);
-      toast.error('Erro ao carregar visualização');
+      toast.error('Erro ao carregar visualização: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
