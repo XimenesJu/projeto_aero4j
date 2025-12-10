@@ -75,6 +75,42 @@ const App = () => {
       filtered.nodes = [...data.nodes];
     }
 
+    // Apply dataset filter (BR or full)
+    if (currentDataset === 'BR') {
+      filtered.nodes = filtered.nodes.filter(node => {
+        // Keep Brazilian airports
+        if (node.label === 'Airport' && node.country === 'BR') return true;
+        // Keep airlines that operate in Brazil (connected to BR airports)
+        if (node.label === 'Airline') {
+          // Will check connections after filtering
+          return true;
+        }
+        return false;
+      });
+      
+      // Filter routes to only BR-to-BR connections
+      const brAirportIds = new Set(
+        filtered.nodes
+          .filter(n => n.label === 'Airport' && n.country === 'BR')
+          .map(n => n.id)
+      );
+      
+      filtered.links = data.links.filter(link => {
+        const sourceId = link.source.id || link.source;
+        const targetId = link.target.id || link.target;
+        return brAirportIds.has(sourceId) && brAirportIds.has(targetId);
+      });
+      
+      // Keep only airlines that have routes in the filtered data
+      const airlinesInRoutes = new Set(filtered.links.map(l => l.airline).filter(Boolean));
+      filtered.nodes = filtered.nodes.filter(node => {
+        if (node.label === 'Airline') {
+          return airlinesInRoutes.has(node.code) || airlinesInRoutes.has(node.id);
+        }
+        return true;
+      });
+    }
+
     // Apply type filters
     filtered.nodes = filtered.nodes.filter(node => {
       if (node.label === 'Airport' && !showAirports) return false;
@@ -84,7 +120,7 @@ const App = () => {
 
     const nodeIds = new Set(filtered.nodes.map(n => n.id));
     
-    filtered.links = data.links.filter(link => {
+    filtered.links = filtered.links.filter(link => {
       if (!showRoutes) return false;
       return nodeIds.has(link.source.id || link.source) && 
              nodeIds.has(link.target.id || link.target);
@@ -96,7 +132,7 @@ const App = () => {
   // Update filters when dependencies change
   useEffect(() => {
     applyGraphFilters();
-  }, [showAirports, showAirlines, showRoutes, graphMode, response]);
+  }, [showAirports, showAirlines, showRoutes, graphMode, response, currentDataset]);
 
   const handleQuery = async () => {
     if (!query.trim()) return;
@@ -129,11 +165,28 @@ const App = () => {
     }
   };
 
+  const handleFilterDataset = async (region = null) => {
+    // Filter existing data without modifying database
+    setCurrentDataset(region || 'full');
+    setGraphMode('all');
+    setResponse(null);
+    
+    if (region === 'BR') {
+      // Filter to show only Brazilian data
+      toast.success('Exibindo apenas dados brasileiros');
+    } else {
+      // Show all data
+      toast.success('Exibindo todos os dados');
+    }
+    
+    await loadGraphData();
+  };
+
   const handleSeedData = async (region = null) => {
     setLoading(true);
     try {
       const res = await axios.post(`${API}/seed-data`, { 
-        clear_existing: false,  // Changed to false to preserve existing data
+        clear_existing: false,  // Never clear existing data
         region: region 
       });
       
@@ -144,9 +197,8 @@ const App = () => {
       
       toast.success(message);
       setDataSeeded(true);
-      setCurrentDataset(region || 'full'); // Track current dataset
+      setCurrentDataset(region || 'full');
       
-      // Reset to full graph mode to show all data
       setGraphMode('all');
       setResponse(null);
       
@@ -237,20 +289,20 @@ const App = () => {
             </div>
             <div className="flex items-center space-x-3">
               <Button
-                onClick={() => handleSeedData('BR')}
+                onClick={() => handleFilterDataset('BR')}
                 disabled={loading}
                 className={`font-semibold rounded-md transition-all ${
                   currentDataset === 'BR' 
                     ? 'bg-green-600 text-white hover:bg-green-700 ring-2 ring-green-400' 
                     : 'bg-green-600/50 text-white hover:bg-green-600'
                 }`}
-                data-testid="seed-br-button"
+                data-testid="filter-br-button"
               >
                 <Database className="mr-2 h-4 w-4" />
-                Dados Brasil
+                🇧🇷 Ver Dados Brasil
               </Button>
               <Button
-                onClick={() => handleSeedData('full')}
+                onClick={() => handleFilterDataset('full')}
                 disabled={loading}
                 className={`font-semibold rounded-md transition-all ${
                   currentDataset === 'full' 
@@ -448,22 +500,22 @@ const App = () => {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Nós:</span>
-                    <span className="text-cyan-400 font-semibold">{graphData.nodes.length}</span>
+                    <span className="text-cyan-400 font-semibold">{filteredGraphData.nodes.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Relacionamentos:</span>
-                    <span className="text-cyan-400 font-semibold">{graphData.links.length}</span>
+                    <span className="text-cyan-400 font-semibold">{filteredGraphData.links.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Aeroportos:</span>
                     <span className="text-cyan-400 font-semibold">
-                      {graphData.nodes.filter(n => n.label === 'Airport').length}
+                      {filteredGraphData.nodes.filter(n => n.label === 'Airport').length}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Companhias:</span>
                     <span className="text-amber-400 font-semibold">
-                      {graphData.nodes.filter(n => n.label === 'Airline').length}
+                      {filteredGraphData.nodes.filter(n => n.label === 'Airline').length}
                     </span>
                   </div>
                 </div>
