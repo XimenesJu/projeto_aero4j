@@ -22,10 +22,12 @@ neo4j_database = os.environ['NEO4J_DATABASE']
 
 driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
 
-# Google Generative AI Configuration
+# LLM API Configuration
 gemini_api_key = os.environ.get('GEMINI_API_KEY', '')
-if not gemini_api_key:
-    logging.warning("GEMINI_API_KEY not set. LLM features will be limited.")
+openai_api_key = os.environ.get('OPENAI_API_KEY', '')
+
+if not gemini_api_key and not openai_api_key:
+    logging.warning("No LLM API key set. LLM features will be limited.")
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -72,9 +74,37 @@ def run_neo4j_query(query: str, parameters: dict = None):
             records.append(record_dict)
         return records
 
-# Helper function to list available models
+# Helper function to call OpenAI API
+def call_openai_api(prompt: str) -> str:
+    """Call OpenAI API"""
+    url = "https://api.openai.com/v1/chat/completions"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {openai_api_key}"
+    }
+    
+    payload = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        "max_tokens": 500
+    }
+    
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    
+    if response.status_code != 200:
+        raise Exception(f"OpenAI API error: {response.status_code} - {response.text}")
+    
+    result = response.json()
+    return result["choices"][0]["message"]["content"]
+
+# Helper function to list available Gemini models
 def list_available_models():
     """List all available Gemini models"""
+    if not gemini_api_key:
+        return []
+    
     url = "https://generativelanguage.googleapis.com/v1beta/models"
     params = {"key": gemini_api_key}
     
@@ -88,7 +118,7 @@ def list_available_models():
                 for m in models 
                 if "generateContent" in m.get("supportedGenerationMethods", [])
             ]
-            logging.info(f"Available models: {valid_models}")
+            logging.info(f"Available Gemini models: {valid_models}")
             return valid_models
         else:
             logging.warning(f"Failed to list models: {response.status_code}")
@@ -136,19 +166,11 @@ _working_model = None
 
 # Helper function to generate Cypher query using LLM
 async def generate_cypher_query(natural_language_query: str) -> str:
-    """Generate a Cypher query from natural language using Google Gemini"""
+    """Generate a Cypher query from natural language using LLM"""
     global _working_model
     
-    if not gemini_api_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
-    
-    # Get available models if not cached
-    if _working_model is None:
-        available_models = list_available_models()
-        if not available_models:
-            raise HTTPException(status_code=500, detail="No Gemini models available")
-        _working_model = available_models[0]
-        logging.info(f"Selected model: {_working_model}")
+    if not openai_api_key and not gemini_api_key:
+        raise HTTPException(status_code=500, detail="No LLM API key configured")
     
     system_prompt = """You are a Neo4j Cypher query expert. Given a natural language question about an aviation network database, 
 generate a valid Cypher query. The database contains:
@@ -168,25 +190,53 @@ Examples:
     
     full_prompt = f"{system_prompt}\n\nQuestion: {natural_language_query}"
     
-    try:
-        logging.info(f"Using model: {_working_model}")
-        response_text = call_gemini_api(full_prompt, _working_model)
+    # Try OpenAI first (more reliable)
+    if openai_api_key:
+        try:
+            logging.info("Using OpenAI API")
+            response_text = call_openai_api(full_prompt)
+            
+            cypher_query = response_text.strip()
+            
+            # Remove markdown code blocks if present
+            if cypher_query.startswith('```'):
+                lines = cypher_query.split('\n')
+                cypher_query = '\n'.join(lines[1:-1] if len(lines) > 2 and lines[-1].strip() == '```' else lines[1:])
+            
+            return cypher_query.strip()
+        except Exception as e:
+            logging.warning(f"OpenAI failed: {e}. Trying Gemini...")
+    
+    # Fallback to Gemini
+    if gemini_api_key:
+        # Get available models if not cached
+        if _working_model is None:
+            available_models = list_available_models()
+            if not available_models:
+                raise HTTPException(status_code=500, detail="No models available")
+            _working_model = available_models[0]
+            logging.info(f"Selected Gemini model: {_working_model}")
         
-        cypher_query = response_text.strip()
-        
-        # Remove markdown code blocks if present
-        if cypher_query.startswith('```'):
-            lines = cypher_query.split('\n')
-            cypher_query = '\n'.join(lines[1:-1] if len(lines) > 2 and lines[-1].strip() == '```' else lines[1:])
-        
-        return cypher_query.strip()
-        
-    except Exception as e:
-        error_msg = str(e)
-        logging.error(f"Model {_working_model} failed: {error_msg}")
-        # Reset cache and retry with fresh model list
-        _working_model = None
-        raise HTTPException(status_code=500, detail=f"Failed to generate query: {error_msg}")
+        try:
+            logging.info(f"Using Gemini model: {_working_model}")
+            response_text = call_gemini_api(full_prompt, _working_model)
+            
+            cypher_query = response_text.strip()
+            
+            # Remove markdown code blocks if present
+            if cypher_query.startswith('```'):
+                lines = cypher_query.split('\n')
+                cypher_query = '\n'.join(lines[1:-1] if len(lines) > 2 and lines[-1].strip() == '```' else lines[1:])
+            
+            return cypher_query.strip()
+            
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"Gemini failed: {error_msg}")
+            _working_model = None
+            raise HTTPException(status_code=500, detail=f"Failed to generate query: {error_msg}")
+    
+    raise HTTPException(status_code=500, detail="All LLM providers failed")
 
 @api_router.get("/")
 async def root():
@@ -201,10 +251,9 @@ async def graphrag_query(request: QueryRequest):
         # Execute the generated query
         results = run_neo4j_query(cypher_query)
         
-        # Generate natural language answer using Gemini
-        if gemini_api_key:
+        # Generate natural language answer using LLM
+        if openai_api_key or gemini_api_key:
             try:
-                # Use the same working model
                 answer_prompt = f"""You are a helpful assistant that explains query results from an aviation network database.
                 
 Query: {request.query}
@@ -212,7 +261,17 @@ Results (first 5): {results[:5]}
 
 Provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sentences."""
                 
-                answer = call_gemini_api(answer_prompt, _working_model)
+                # Try OpenAI first
+                if openai_api_key:
+                    try:
+                        answer = call_openai_api(answer_prompt)
+                    except:
+                        if gemini_api_key and _working_model:
+                            answer = call_gemini_api(answer_prompt, _working_model)
+                        else:
+                            raise
+                else:
+                    answer = call_gemini_api(answer_prompt, _working_model)
             except Exception as e:
                 logging.warning(f"Could not generate answer with LLM: {str(e)}. Using basic response.")
                 answer = f"Found {len(results)} results for your query."
