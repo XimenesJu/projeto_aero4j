@@ -27,12 +27,12 @@ const App = () => {
   const [showAirlines, setShowAirlines] = useState(true);
   const [showRoutes, setShowRoutes] = useState(true);
   const [graphMode, setGraphMode] = useState('all'); // 'all', 'query-results', 'preset'
-  const [currentDataset, setCurrentDataset] = useState('full'); // 'full' or 'BR'
+  const [currentDataset, setCurrentDataset] = useState('BR'); // 'full' or 'BR'
 
   useEffect(() => {
     loadExamples();
-    // Load full dataset on startup
-    handleSeedData('full');
+    // Load Brazil dataset on startup
+    handleSeedData('BR');
   }, []);
 
   const loadExamples = async () => {
