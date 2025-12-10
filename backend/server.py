@@ -574,23 +574,26 @@ async def seed_brazil_data():
             except Exception as e:
                 continue
         
-        # Load Brazilian airlines
+        # Load Brazilian airlines - BATCH OPTIMIZED
         url_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
         airlines_df = pd.read_csv(url_airlines)
         
+        # Prepare batch
+        airlines_df['code'] = airlines_df.get('IATA', airlines_df.get('ICAO', '')).fillna('Unknown')
+        airlines_df['name'] = airlines_df.get('Name', '').fillna('Unknown')
+        airlines_df['country'] = airlines_df.get('Country', '').fillna('Brazil')
+        airlines_batch = airlines_df[['code', 'name', 'country']].to_dict('records')
+        
+        # Batch insert airlines
         airline_count = 0
-        for _, airline in airlines_df.iterrows():
+        if airlines_batch:
             query = """
-            MERGE (al:Airline {code: $code})
-            SET al.name = $name, al.country = $country
+            UNWIND $batch as airline
+            MERGE (al:Airline {code: airline.code})
+            SET al.name = airline.name, al.country = airline.country
             """
-            params = {
-                'code': airline.get('IATA', airline.get('ICAO', 'Unknown')),
-                'name': airline.get('Name', 'Unknown'),
-                'country': airline.get('Country', 'Brazil')
-            }
-            run_neo4j_query(query, params)
-            airline_count += 1
+            run_neo4j_query(query, {'batch': airlines_batch})
+            airline_count = len(airlines_batch)
         
         logging.info(f"Brazil data loaded: {airport_count} airports, {airline_count} airlines, {route_count} routes")
         return {

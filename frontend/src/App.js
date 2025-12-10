@@ -31,8 +31,8 @@ const App = () => {
 
   useEffect(() => {
     loadExamples();
-    // Auto-load Brazil dataset on startup - 2025-12-10
-    handleSeedData('BR');
+    // Load graph data without seeding
+    loadGraphData();
   }, []);
 
   const loadExamples = async () => {
