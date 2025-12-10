@@ -72,9 +72,35 @@ def run_neo4j_query(query: str, parameters: dict = None):
             records.append(record_dict)
         return records
 
+# Helper function to list available models
+def list_available_models():
+    """List all available Gemini models"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    params = {"key": gemini_api_key}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            # Get models that support generateContent
+            valid_models = [
+                m["name"].replace("models/", "") 
+                for m in models 
+                if "generateContent" in m.get("supportedGenerationMethods", [])
+            ]
+            logging.info(f"Available models: {valid_models}")
+            return valid_models
+        else:
+            logging.warning(f"Failed to list models: {response.status_code}")
+            return []
+    except Exception as e:
+        logging.warning(f"Error listing models: {e}")
+        return []
+
 # Helper function to call Gemini API directly via REST
-def call_gemini_api(prompt: str, model_name: str = "gemini-1.5-flash") -> str:
+def call_gemini_api(prompt: str, model_name: str) -> str:
     """Call Google Gemini API directly using REST"""
+    # Don't add models/ prefix - API expects just the model name
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     
     headers = {
@@ -105,15 +131,8 @@ def call_gemini_api(prompt: str, model_name: str = "gemini-1.5-flash") -> str:
     result = response.json()
     return result["candidates"][0]["content"]["parts"][0]["text"]
 
-# List of model names to try in order
-MODEL_FALLBACK_LIST = [
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-pro',
-]
-
 # Cache the working model
-_working_model = 'gemini-1.5-flash'
+_working_model = None
 
 # Helper function to generate Cypher query using LLM
 async def generate_cypher_query(natural_language_query: str) -> str:
@@ -122,6 +141,14 @@ async def generate_cypher_query(natural_language_query: str) -> str:
     
     if not gemini_api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    
+    # Get available models if not cached
+    if _working_model is None:
+        available_models = list_available_models()
+        if not available_models:
+            raise HTTPException(status_code=500, detail="No Gemini models available")
+        _working_model = available_models[0]
+        logging.info(f"Selected model: {_working_model}")
     
     system_prompt = """You are a Neo4j Cypher query expert. Given a natural language question about an aviation network database, 
 generate a valid Cypher query. The database contains:
@@ -141,34 +168,25 @@ Examples:
     
     full_prompt = f"{system_prompt}\n\nQuestion: {natural_language_query}"
     
-    # Try models in order until one works
-    last_error = None
-    for model_name in MODEL_FALLBACK_LIST:
-        try:
-            logging.info(f"Trying model: {model_name}")
-            response_text = call_gemini_api(full_prompt, model_name)
-            
-            # Success! Cache this model
-            _working_model = model_name
-            logging.info(f"Successfully used model: {model_name}")
-            
-            cypher_query = response_text.strip()
-            
-            # Remove markdown code blocks if present
-            if cypher_query.startswith('```'):
-                lines = cypher_query.split('\n')
-                cypher_query = '\n'.join(lines[1:-1] if len(lines) > 2 and lines[-1].strip() == '```' else lines[1:])
-            
-            return cypher_query.strip()
-            
-        except Exception as e:
-            last_error = str(e)
-            logging.warning(f"Model {model_name} failed: {last_error}")
-            continue
-    
-    # All models failed
-    logging.error(f"All models failed. Last error: {last_error}")
-    raise HTTPException(status_code=500, detail=f"Failed to generate query: {last_error}")
+    try:
+        logging.info(f"Using model: {_working_model}")
+        response_text = call_gemini_api(full_prompt, _working_model)
+        
+        cypher_query = response_text.strip()
+        
+        # Remove markdown code blocks if present
+        if cypher_query.startswith('```'):
+            lines = cypher_query.split('\n')
+            cypher_query = '\n'.join(lines[1:-1] if len(lines) > 2 and lines[-1].strip() == '```' else lines[1:])
+        
+        return cypher_query.strip()
+        
+    except Exception as e:
+        error_msg = str(e)
+        logging.error(f"Model {_working_model} failed: {error_msg}")
+        # Reset cache and retry with fresh model list
+        _working_model = None
+        raise HTTPException(status_code=500, detail=f"Failed to generate query: {error_msg}")
 
 @api_router.get("/")
 async def root():
