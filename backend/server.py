@@ -575,14 +575,15 @@ async def seed_full_dataset():
     try:
         logging.info("Loading full dataset with batch processing...")
         
-        # Load airports - limit to first 500 for performance and to avoid timeout
+        # Load airports - limit to first 2000 rows and filter by type
         url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
-        airports_df = pd.read_csv(url_airports, nrows=500)
+        airports_df = pd.read_csv(url_airports, nrows=2000)
         
-        # Prepare batch data for airports
+        # Prepare batch data for airports (only large and medium airports with IATA codes)
         airports_batch = []
         for _, row in airports_df.iterrows():
-            if pd.notna(row.get('iata_code')) and row.get('iata_code'):
+            # Filter for airports with IATA codes and large/medium types
+            if pd.notna(row.get('iata_code')) and row.get('iata_code') and pd.notna(row.get('type')) and row.get('type') in ['large_airport', 'medium_airport']:
                 # Parse coordinates
                 lat, lon = 0.0, 0.0
                 if pd.notna(row.get('coordinates')):

@@ -158,7 +158,7 @@ const App = () => {
       
       switch(preset) {
         case 'brazil-airports':
-          cypher = "MATCH (a:Airport) WHERE a.country = 'Brazil' RETURN a LIMIT 50";
+          cypher = "MATCH (a:Airport) WHERE a.country = 'BR' RETURN a LIMIT 50";
           break;
         case 'major-hubs':
           cypher = "MATCH (a:Airport)-[r:ROUTE]->() WITH a, count(r) as connections WHERE connections > 10 RETURN a ORDER BY connections DESC LIMIT 30";
@@ -167,7 +167,7 @@ const App = () => {
           cypher = "MATCH (al:Airline)-[r]-(a:Airport) RETURN al, r, a LIMIT 100";
           break;
         case 'international-routes':
-          cypher = "MATCH (a1:Airport)-[r:ROUTE]->(a2:Airport) WHERE a1.country <> a2.country RETURN a1, r, a2 LIMIT 50";
+          cypher = "MATCH (a1:Airport)-[r:ROUTE]->(a2:Airport) WHERE a1.country <> a2.country AND a1.country IS NOT NULL AND a2.country IS NOT NULL RETURN a1, r, a2 LIMIT 50";
           break;
         default:
           return;
@@ -378,22 +378,22 @@ const App = () => {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Nós:</span>
-                    <span className="text-cyan-400 font-semibold">{filteredGraphData.nodes.length}</span>
+                    <span className="text-cyan-400 font-semibold">{graphData.nodes.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Relacionamentos:</span>
-                    <span className="text-cyan-400 font-semibold">{filteredGraphData.links.length}</span>
+                    <span className="text-cyan-400 font-semibold">{graphData.links.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Aeroportos:</span>
                     <span className="text-cyan-400 font-semibold">
-                      {filteredGraphData.nodes.filter(n => n.label === 'Airport').length}
+                      {graphData.nodes.filter(n => n.label === 'Airport').length}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Companhias:</span>
                     <span className="text-amber-400 font-semibold">
-                      {filteredGraphData.nodes.filter(n => n.label === 'Airline').length}
+                      {graphData.nodes.filter(n => n.label === 'Airline').length}
                     </span>
                   </div>
                 </div>
