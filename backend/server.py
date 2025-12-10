@@ -7,8 +7,9 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from neo4j import GraphDatabase
-import google.generativeai as genai
 import asyncio
+import requests
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -23,9 +24,7 @@ driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
 
 # Google Generative AI Configuration
 gemini_api_key = os.environ.get('GEMINI_API_KEY', '')
-if gemini_api_key:
-    genai.configure(api_key=gemini_api_key)
-else:
+if not gemini_api_key:
     logging.warning("GEMINI_API_KEY not set. LLM features will be limited.")
 
 # Create the main app without a prefix
@@ -73,21 +72,53 @@ def run_neo4j_query(query: str, parameters: dict = None):
             records.append(record_dict)
         return records
 
+# Helper function to call Gemini API directly via REST
+def call_gemini_api(prompt: str, model_name: str = "gemini-1.5-flash") -> str:
+    """Call Google Gemini API directly using REST"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    
+    headers = {
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": prompt
+            }]
+        }],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 2048
+        }
+    }
+    
+    params = {
+        "key": gemini_api_key
+    }
+    
+    response = requests.post(url, headers=headers, params=params, json=payload, timeout=30)
+    
+    if response.status_code != 200:
+        raise Exception(f"Gemini API error: {response.status_code} - {response.text}")
+    
+    result = response.json()
+    return result["candidates"][0]["content"]["parts"][0]["text"]
+
 # List of model names to try in order
 MODEL_FALLBACK_LIST = [
     'gemini-1.5-flash',
-    'gemini-1.5-pro', 
+    'gemini-1.5-pro',
     'gemini-pro',
-    'gemini-1.0-pro',
 ]
 
-# Cache the working model index
-_working_model_index = 0
+# Cache the working model
+_working_model = 'gemini-1.5-flash'
 
 # Helper function to generate Cypher query using LLM
 async def generate_cypher_query(natural_language_query: str) -> str:
     """Generate a Cypher query from natural language using Google Gemini"""
-    global _working_model_index
+    global _working_model
     
     if not gemini_api_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
@@ -108,25 +139,20 @@ Examples:
 - "Which airlines operate international routes?" -> MATCH (al:Airline)-[:OPERATES]->(a:Airport)-[r:ROUTE]->(b:Airport) WHERE a.country <> b.country RETURN DISTINCT al LIMIT 50
 """
     
+    full_prompt = f"{system_prompt}\n\nQuestion: {natural_language_query}"
+    
     # Try models in order until one works
     last_error = None
-    for i in range(len(MODEL_FALLBACK_LIST)):
-        model_index = (_working_model_index + i) % len(MODEL_FALLBACK_LIST)
-        model_name = MODEL_FALLBACK_LIST[model_index]
-        
+    for model_name in MODEL_FALLBACK_LIST:
         try:
             logging.info(f"Trying model: {model_name}")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(
-                f"{system_prompt}\n\nQuestion: {natural_language_query}",
-                generation_config=genai.types.GenerationConfig(temperature=0)
-            )
+            response_text = call_gemini_api(full_prompt, model_name)
             
-            # Success! Cache this model index
-            _working_model_index = model_index
+            # Success! Cache this model
+            _working_model = model_name
             logging.info(f"Successfully used model: {model_name}")
             
-            cypher_query = response.text.strip()
+            cypher_query = response_text.strip()
             
             # Remove markdown code blocks if present
             if cypher_query.startswith('```'):
@@ -161,8 +187,6 @@ async def graphrag_query(request: QueryRequest):
         if gemini_api_key:
             try:
                 # Use the same working model
-                model_name = MODEL_FALLBACK_LIST[_working_model_index]
-                model = genai.GenerativeModel(model_name)
                 answer_prompt = f"""You are a helpful assistant that explains query results from an aviation network database.
                 
 Query: {request.query}
@@ -170,8 +194,7 @@ Results (first 5): {results[:5]}
 
 Provide a clear, concise answer in Portuguese (Brazilian). Keep it under 3 sentences."""
                 
-                answer_response = model.generate_content(answer_prompt)
-                answer = answer_response.text
+                answer = call_gemini_api(answer_prompt, _working_model)
             except Exception as e:
                 logging.warning(f"Could not generate answer with LLM: {str(e)}. Using basic response.")
                 answer = f"Found {len(results)} results for your query."
