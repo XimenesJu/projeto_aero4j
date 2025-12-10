@@ -587,9 +587,17 @@ async def seed_full_dataset():
         
         # Prepare batch data for airports (only large and medium airports with IATA codes)
         airports_batch = []
-        for _, row in airports_df.iterrows():
+        total_rows = len(airports_df)
+        logging.info(f"Processing {total_rows} airport rows from CSV...")
+        
+        for idx, row in airports_df.iterrows():
             # Filter for airports with IATA codes and large/medium types
-            if pd.notna(row.get('iata_code')) and row.get('iata_code') and pd.notna(row.get('type')) and row.get('type') in ['large_airport', 'medium_airport']:
+            has_iata = pd.notna(row.get('iata_code')) and row.get('iata_code')
+            has_type = pd.notna(row.get('type'))
+            airport_type = row.get('type', '') if has_type else ''
+            is_major = airport_type in ['large_airport', 'medium_airport']
+            
+            if has_iata and has_type and is_major:
                 # Parse coordinates
                 lat, lon = 0.0, 0.0
                 if pd.notna(row.get('coordinates')):
@@ -608,6 +616,8 @@ async def seed_full_dataset():
                     'latitude': lat,
                     'longitude': lon
                 })
+        
+        logging.info(f"Filtered to {len(airports_batch)} major airports with IATA codes")
         
         # Batch insert all airports at once
         if airports_batch:
