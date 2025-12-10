@@ -107,15 +107,6 @@ const App = () => {
             </div>
             <div className="flex items-center space-x-3">
               <Button
-                onClick={() => handleSeedData()}
-                disabled={loading}
-                className="bg-slate-700 text-white hover:bg-slate-600 font-semibold rounded-md transition-all"
-                data-testid="seed-sample-button"
-              >
-                <Database className="mr-2 h-4 w-4" />
-                Dados de Exemplo
-              </Button>
-              <Button
                 onClick={() => handleSeedData('BR')}
                 disabled={loading}
                 className="bg-green-600 text-white hover:bg-green-700 font-semibold rounded-md transition-all"

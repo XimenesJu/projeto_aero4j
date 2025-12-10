@@ -500,9 +500,10 @@ async def seed_brazil_data():
         br_codes = set(br_airports['iata_code'].dropna().values)
         
         # Filter routes where source OR destination is in Brazil
+        # Note: CSV has typo 'destination_apirport' instead of 'destination_airport'
         br_routes = routes_df[
             (routes_df['source_airport'].isin(br_codes)) | 
-            (routes_df['destination_airport'].isin(br_codes))
+            (routes_df['destination_apirport'].isin(br_codes))
         ].copy()
         
         route_count = 0
@@ -515,7 +516,7 @@ async def seed_brazil_data():
                 """
                 params = {
                     'from': route['source_airport'],
-                    'to': route['destination_airport'],
+                    'to': route['destination_apirport'],
                     'airline': route.get('airline', 'Unknown'),
                     'distance': float(route.get('distance', 0))
                 }
@@ -612,7 +613,7 @@ async def seed_full_dataset():
                 """
                 params = {
                     'from': route['source_airport'],
-                    'to': route['destination_airport'],
+                    'to': route['destination_apirport'],
                     'airline': route.get('airline', 'Unknown'),
                     'distance': float(route.get('distance', 0))
                 }
