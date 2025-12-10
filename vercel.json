@@ -3,6 +3,6 @@
   "outputDirectory": "frontend/build",
   "framework": "create-react-app",
   "env": {
-    "REACT_APP_BACKEND_URL": "@https://projeto-aero4j.onrender.com"
+    "REACT_APP_BACKEND_URL": "https://projeto-aero4j.onrender.com"
   }
 }
