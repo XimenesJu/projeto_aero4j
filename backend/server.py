@@ -301,6 +301,11 @@ async def seed_data(request: SeedDataRequest):
         logging.error(f"Error seeding data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error seeding data: {str(e)}")
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "Backend is running"}
+
 # Include the router in the main app
 app.include_router(api_router)
 
