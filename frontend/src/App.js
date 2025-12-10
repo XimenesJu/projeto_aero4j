@@ -100,7 +100,7 @@ const App = () => {
               <GitBranch className="h-8 w-8 text-cyan-400" />
               <div>
                 <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: 'Chivo, sans-serif' }}>
-                  AeroGraph <span className="text-cyan-400">Analytics</span>
+                  Aero4jGraph <span className="text-cyan-400">Analytics</span>
                 </h1>
                 <p className="text-sm text-slate-400">Análise de Redes de Aviação com GraphRAG + Neo4j</p>
               </div>
