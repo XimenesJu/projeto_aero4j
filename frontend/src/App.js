@@ -132,6 +132,11 @@ const App = () => {
       
       toast.success(message);
       setDataSeeded(true);
+      
+      // Reset to full graph mode to show all data
+      setGraphMode('full');
+      setResponse(null);
+      
       loadGraphData();
     } catch (error) {
       console.error('Error seeding data:', error);
