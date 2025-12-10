@@ -325,20 +325,18 @@ async def direct_cypher_query(request: QueryRequest):
 @api_router.get("/graph/data", response_model=GraphData)
 async def get_graph_data():
     try:
-        # Get nodes (airports and airlines)
+        # Get nodes (airports and airlines) - no limit to show all data
         nodes_query = """
         MATCH (n)
         WHERE n:Airport OR n:Airline
         RETURN id(n) as id, labels(n)[0] as label, properties(n) as properties
-        LIMIT 100
         """
         nodes_data = run_neo4j_query(nodes_query)
         
-        # Get relationships
+        # Get relationships - no limit to show all data
         links_query = """
         MATCH (a)-[r:ROUTE]->(b)
         RETURN id(a) as source, id(b) as target, type(r) as type, properties(r) as properties
-        LIMIT 200
         """
         links_data = run_neo4j_query(links_query)
         

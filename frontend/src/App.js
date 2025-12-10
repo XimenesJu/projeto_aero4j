@@ -27,10 +27,12 @@ const App = () => {
   const [showAirlines, setShowAirlines] = useState(true);
   const [showRoutes, setShowRoutes] = useState(true);
   const [graphMode, setGraphMode] = useState('all'); // 'all', 'query-results', 'preset'
+  const [currentDataset, setCurrentDataset] = useState('full'); // 'full' or 'BR'
 
   useEffect(() => {
     loadExamples();
-    loadGraphData();
+    // Load full dataset on startup
+    handleSeedData('full');
   }, []);
 
   const loadExamples = async () => {
@@ -132,12 +134,13 @@ const App = () => {
       
       toast.success(message);
       setDataSeeded(true);
+      setCurrentDataset(region || 'full'); // Track current dataset
       
       // Reset to full graph mode to show all data
-      setGraphMode('full');
+      setGraphMode('all');
       setResponse(null);
       
-      loadGraphData();
+      await loadGraphData();
     } catch (error) {
       console.error('Error seeding data:', error);
       toast.error('Erro ao popular dados: ' + (error.response?.data?.detail || error.message));
@@ -155,34 +158,48 @@ const App = () => {
     setLoading(true);
     try {
       let cypher = '';
+      const isBrazil = currentDataset === 'BR';
       
       switch(preset) {
-        case 'brazil-airports':
-          cypher = "MATCH (a:Airport) WHERE a.country = 'BR' RETURN a LIMIT 50";
+        case 'all-airports':
+          // Show ALL airports from current dataset
+          if (isBrazil) {
+            cypher = "MATCH (a:Airport) WHERE a.country = 'BR' RETURN a";
+          } else {
+            cypher = "MATCH (a:Airport) RETURN a";
+          }
           break;
         case 'major-hubs':
-          cypher = "MATCH (a:Airport)-[r:ROUTE]->() WITH a, count(r) as connections WHERE connections > 10 RETURN a ORDER BY connections DESC LIMIT 30";
+          // Show major airports (>10 connections) from current dataset
+          if (isBrazil) {
+            cypher = "MATCH (a:Airport)-[r:ROUTE]->() WHERE a.country = 'BR' WITH a, count(r) as connections WHERE connections > 10 RETURN a ORDER BY connections DESC";
+          } else {
+            cypher = "MATCH (a:Airport)-[r:ROUTE]->() WITH a, count(r) as connections WHERE connections > 10 RETURN a ORDER BY connections DESC";
+          }
           break;
-        case 'airlines-network':
-          cypher = "MATCH (al:Airline)-[r]-(a:Airport) RETURN al, r, a LIMIT 100";
-          break;
-        case 'international-routes':
-          cypher = "MATCH (a1:Airport)-[r:ROUTE]->(a2:Airport) WHERE a1.country <> a2.country AND a1.country IS NOT NULL AND a2.country IS NOT NULL RETURN a1, r, a2 LIMIT 50";
+        case 'airlines':
+          // Show ALL airlines from current dataset
+          if (isBrazil) {
+            cypher = "MATCH (al:Airline) WHERE al.country = 'BR' OR al.country = 'Brazil' RETURN al";
+          } else {
+            cypher = "MATCH (al:Airline) RETURN al";
+          }
           break;
         default:
           return;
       }
 
-      // Use direct Cypher query endpoint instead of GraphRAG (doesn't require AI)
-      const res = await axios.post(`${API}/query`, { query: cypher });
-      setResponse(res.data);
+      // Reset to 'all' mode to show full graph
+      setGraphMode('all');
+      setResponse(null);
       
-      // Load graph data first to populate the visualization
+      // Execute query to get data
+      await axios.post(`${API}/query`, { query: cypher });
+      
+      
+      // Reload graph data to show updated visualization
       await loadGraphData();
-      
-      // Then switch to query-results mode to filter based on the query
-      setGraphMode('query-results');
-      setActiveTab('graph'); // Switch to graph tab
+      setActiveTab('graph');
       
       toast.success('Visualização carregada!');
     } catch (error) {
@@ -212,7 +229,11 @@ const App = () => {
               <Button
                 onClick={() => handleSeedData('BR')}
                 disabled={loading}
-                className="bg-green-600 text-white hover:bg-green-700 font-semibold rounded-md transition-all"
+                className={`font-semibold rounded-md transition-all ${
+                  currentDataset === 'BR' 
+                    ? 'bg-green-600 text-white hover:bg-green-700 ring-2 ring-green-400' 
+                    : 'bg-green-600/50 text-white hover:bg-green-600'
+                }`}
                 data-testid="seed-br-button"
               >
                 <Database className="mr-2 h-4 w-4" />
@@ -221,11 +242,15 @@ const App = () => {
               <Button
                 onClick={() => handleSeedData('full')}
                 disabled={loading}
-                className="bg-cyan-400 text-black hover:bg-cyan-500 font-semibold rounded-md transition-all shadow-[0_0_15px_-3px_rgba(34,211,238,0.4)]"
+                className={`font-semibold rounded-md transition-all ${
+                  currentDataset === 'full' 
+                    ? 'bg-cyan-400 text-black hover:bg-cyan-500 shadow-[0_0_15px_-3px_rgba(34,211,238,0.4)] ring-2 ring-cyan-300' 
+                    : 'bg-cyan-400/50 text-black hover:bg-cyan-400'
+                }`}
                 data-testid="seed-full-button"
               >
                 <Database className="mr-2 h-4 w-4" />
-                Dataset Completo
+                Dados Totais
               </Button>
             </div>
           </div>
@@ -438,14 +463,14 @@ const App = () => {
             {/* Preset Visualizations */}
             <Card className="bg-[#18181b] border-[#27272a] p-4">
               <h3 className="text-sm font-semibold mb-3 text-cyan-400">Visualizações Pré-definidas</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Button
-                  onClick={() => loadPresetVisualization('brazil-airports')}
+                  onClick={() => loadPresetVisualization('all-airports')}
                   disabled={loading}
                   variant="outline"
                   className="border-green-600 text-green-400 hover:bg-green-900/20"
                 >
-                  🇧🇷 Aeroportos BR
+                  ✈️ Aeroportos
                 </Button>
                 <Button
                   onClick={() => loadPresetVisualization('major-hubs')}
@@ -456,20 +481,12 @@ const App = () => {
                   🏢 Grandes Hubs
                 </Button>
                 <Button
-                  onClick={() => loadPresetVisualization('airlines-network')}
+                  onClick={() => loadPresetVisualization('airlines')}
                   disabled={loading}
                   variant="outline"
                   className="border-amber-600 text-amber-400 hover:bg-amber-900/20"
                 >
-                  🛫 Rede de Companhias
-                </Button>
-                <Button
-                  onClick={() => loadPresetVisualization('international-routes')}
-                  disabled={loading}
-                  variant="outline"
-                  className="border-blue-600 text-blue-400 hover:bg-blue-900/20"
-                >
-                  🌍 Rotas Internacionais
+                  🛫 Companhias
                 </Button>
               </div>
             </Card>
