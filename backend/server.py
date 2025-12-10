@@ -10,6 +10,8 @@ from neo4j import GraphDatabase
 import asyncio
 import requests
 import json
+import pandas as pd
+from io import StringIO
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -50,6 +52,7 @@ class GraphData(BaseModel):
 
 class SeedDataRequest(BaseModel):
     clear_existing: bool = False
+    region: str = None  # 'BR', 'full', or None for sample
 
 # Helper function to run Neo4j queries
 def run_neo4j_query(query: str, parameters: dict = None):
@@ -367,71 +370,294 @@ async def get_example_queries():
 
 @api_router.post("/seed-data")
 async def seed_data(request: SeedDataRequest):
+    """
+    Seed database with data
+    - region=None: Sample data (10 airports)
+    - region='BR': All Brazil-related data
+    - region='full': Complete dataset (3993 nodes)
+    """
     try:
         # Clear existing data if requested
         if request.clear_existing:
             run_neo4j_query("MATCH (n) DETACH DELETE n")
         
-        # Create airports
-        airports = [
-            {"code": "GRU", "name": "Aeroporto Internacional de São Paulo/Guarulhos", "city": "São Paulo", "country": "Brazil"},
-            {"code": "CGH", "name": "Aeroporto de Congonhas", "city": "São Paulo", "country": "Brazil"},
-            {"code": "GIG", "name": "Aeroporto Internacional do Rio de Janeiro/Galeão", "city": "Rio de Janeiro", "country": "Brazil"},
-            {"code": "BSB", "name": "Aeroporto Internacional de Brasília", "city": "Brasília", "country": "Brazil"},
-            {"code": "JFK", "name": "John F. Kennedy International Airport", "city": "New York", "country": "USA"},
-            {"code": "LAX", "name": "Los Angeles International Airport", "city": "Los Angeles", "country": "USA"},
-            {"code": "LHR", "name": "London Heathrow Airport", "city": "London", "country": "UK"},
-            {"code": "CDG", "name": "Charles de Gaulle Airport", "city": "Paris", "country": "France"},
-            {"code": "NRT", "name": "Narita International Airport", "city": "Tokyo", "country": "Japan"},
-            {"code": "DXB", "name": "Dubai International Airport", "city": "Dubai", "country": "UAE"}
-        ]
-        
-        for airport in airports:
-            query = """
-            CREATE (a:Airport {code: $code, name: $name, city: $city, country: $country})
-            """
-            run_neo4j_query(query, airport)
-        
-        # Create airlines
-        airlines = [
-            {"code": "LATAM", "name": "LATAM Airlines", "country": "Brazil"},
-            {"code": "GOL", "name": "Gol Linhas Aéreas", "country": "Brazil"},
-            {"code": "AA", "name": "American Airlines", "country": "USA"},
-            {"code": "BA", "name": "British Airways", "country": "UK"},
-            {"code": "EK", "name": "Emirates", "country": "UAE"}
-        ]
-        
-        for airline in airlines:
-            query = """
-            CREATE (al:Airline {code: $code, name: $name, country: $country})
-            """
-            run_neo4j_query(query, airline)
-        
-        # Create routes
-        routes = [
-            {"from": "GRU", "to": "GIG", "airline": "LATAM", "distance": 365, "duration": 1.0},
-            {"from": "GRU", "to": "BSB", "airline": "GOL", "distance": 872, "duration": 1.5},
-            {"from": "GRU", "to": "JFK", "airline": "LATAM", "distance": 7680, "duration": 10.5},
-            {"from": "GIG", "to": "JFK", "airline": "AA", "distance": 7750, "duration": 10.0},
-            {"from": "GRU", "to": "LHR", "airline": "BA", "distance": 9450, "duration": 11.5},
-            {"from": "JFK", "to": "LAX", "airline": "AA", "distance": 3970, "duration": 5.5},
-            {"from": "LHR", "to": "CDG", "airline": "BA", "distance": 340, "duration": 1.0},
-            {"from": "DXB", "to": "LHR", "airline": "EK", "distance": 5470, "duration": 7.0},
-            {"from": "NRT", "to": "LAX", "airline": "AA", "distance": 8800, "duration": 11.0},
-            {"from": "CGH", "to": "GIG", "airline": "GOL", "distance": 365, "duration": 1.0}
-        ]
-        
-        for route in routes:
-            query = """
-            MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
-            CREATE (a)-[:ROUTE {airline: $airline, distance_km: $distance, duration_hours: $duration}]->(b)
-            """
-            run_neo4j_query(query, route)
-        
-        return {"message": "Data seeded successfully", "airports": len(airports), "airlines": len(airlines), "routes": len(routes)}
+        if request.region == 'BR':
+            # Load all Brazil-related airports and their connections
+            return await seed_brazil_data()
+        elif request.region == 'full':
+            # Load complete dataset
+            return await seed_full_dataset()
+        else:
+            # Load sample data (original 10 airports)
+            return await seed_sample_data()
+            
     except Exception as e:
         logging.error(f"Error seeding data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error seeding data: {str(e)}")
+
+async def seed_sample_data():
+    """Load sample data with 10 airports"""
+    # Create airports
+    airports = [
+        {"code": "GRU", "name": "Aeroporto Internacional de São Paulo/Guarulhos", "city": "São Paulo", "country": "Brazil"},
+        {"code": "CGH", "name": "Aeroporto de Congonhas", "city": "São Paulo", "country": "Brazil"},
+        {"code": "GIG", "name": "Aeroporto Internacional do Rio de Janeiro/Galeão", "city": "Rio de Janeiro", "country": "Brazil"},
+        {"code": "BSB", "name": "Aeroporto Internacional de Brasília", "city": "Brasília", "country": "Brazil"},
+        {"code": "JFK", "name": "John F. Kennedy International Airport", "city": "New York", "country": "USA"},
+        {"code": "LAX", "name": "Los Angeles International Airport", "city": "Los Angeles", "country": "USA"},
+        {"code": "LHR", "name": "London Heathrow Airport", "city": "London", "country": "UK"},
+        {"code": "CDG", "name": "Charles de Gaulle Airport", "city": "Paris", "country": "France"},
+        {"code": "NRT", "name": "Narita International Airport", "city": "Tokyo", "country": "Japan"},
+        {"code": "DXB", "name": "Dubai International Airport", "city": "Dubai", "country": "UAE"}
+    ]
+    
+    for airport in airports:
+        query = """
+        MERGE (a:Airport {code: $code})
+        SET a.name = $name, a.city = $city, a.country = $country
+        """
+        run_neo4j_query(query, airport)
+    
+    # Create airlines
+    airlines = [
+        {"code": "LATAM", "name": "LATAM Airlines", "country": "Brazil"},
+        {"code": "GOL", "name": "Gol Linhas Aéreas", "country": "Brazil"},
+        {"code": "AA", "name": "American Airlines", "country": "USA"},
+        {"code": "BA", "name": "British Airways", "country": "UK"},
+        {"code": "EK", "name": "Emirates", "country": "UAE"}
+    ]
+    
+    for airline in airlines:
+        query = """
+        MERGE (al:Airline {code: $code})
+        SET al.name = $name, al.country = $country
+        """
+        run_neo4j_query(query, airline)
+    
+    # Create routes
+    routes = [
+        {"from": "GRU", "to": "GIG", "airline": "LATAM", "distance": 365, "duration": 1.0},
+        {"from": "GRU", "to": "BSB", "airline": "GOL", "distance": 872, "duration": 1.5},
+        {"from": "GRU", "to": "JFK", "airline": "LATAM", "distance": 7680, "duration": 10.5},
+        {"from": "GIG", "to": "JFK", "airline": "AA", "distance": 7750, "duration": 10.0},
+        {"from": "GRU", "to": "LHR", "airline": "BA", "distance": 9450, "duration": 11.5},
+        {"from": "JFK", "to": "LAX", "airline": "AA", "distance": 3970, "duration": 5.5},
+        {"from": "LHR", "to": "CDG", "airline": "BA", "distance": 340, "duration": 1.0},
+        {"from": "DXB", "to": "LHR", "airline": "EK", "distance": 5470, "duration": 7.0},
+        {"from": "NRT", "to": "LAX", "airline": "AA", "distance": 8800, "duration": 11.0},
+        {"from": "CGH", "to": "GIG", "airline": "GOL", "distance": 365, "duration": 1.0}
+    ]
+    
+    for route in routes:
+        query = """
+        MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
+        MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
+        SET r.distance_km = $distance, r.duration_hours = $duration
+        """
+        run_neo4j_query(query, route)
+    
+    return {"message": "Sample data loaded", "airports": len(airports), "airlines": len(airlines), "routes": len(routes)}
+
+async def seed_brazil_data():
+    """Load all Brazil-related airports and routes"""
+    try:
+        logging.info("Loading Brazil dataset...")
+        
+        # Load airports from global dataset, filter by Brazil
+        url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
+        airports_df = pd.read_csv(url_airports)
+        
+        # Filter Brazilian airports
+        br_airports = airports_df[airports_df['iso_country'] == 'BR'].copy()
+        
+        # Create airports
+        airport_count = 0
+        for _, row in br_airports.iterrows():
+            if pd.notna(row.get('iata_code')) and row.get('iata_code'):
+                query = """
+                MERGE (a:Airport {code: $code})
+                SET a.name = $name, 
+                    a.city = $city, 
+                    a.country = 'Brazil',
+                    a.latitude = $latitude,
+                    a.longitude = $longitude
+                """
+                params = {
+                    'code': row['iata_code'],
+                    'name': row.get('name', ''),
+                    'city': row.get('municipality', ''),
+                    'latitude': float(row['coordinates'].split(',')[1]) if pd.notna(row.get('coordinates')) else 0.0,
+                    'longitude': float(row['coordinates'].split(',')[0]) if pd.notna(row.get('coordinates')) else 0.0
+                }
+                run_neo4j_query(query, params)
+                airport_count += 1
+        
+        # Load routes involving Brazilian airports
+        url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
+        routes_df = pd.read_csv(url_routes)
+        
+        # Get list of Brazilian airport codes
+        br_codes = set(br_airports['iata_code'].dropna().values)
+        
+        # Filter routes where source OR destination is in Brazil
+        br_routes = routes_df[
+            (routes_df['source_airport'].isin(br_codes)) | 
+            (routes_df['destination_airport'].isin(br_codes))
+        ].copy()
+        
+        route_count = 0
+        for _, route in br_routes.iterrows():
+            try:
+                query = """
+                MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
+                MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
+                SET r.distance_km = $distance
+                """
+                params = {
+                    'from': route['source_airport'],
+                    'to': route['destination_airport'],
+                    'airline': route.get('airline', 'Unknown'),
+                    'distance': float(route.get('distance', 0))
+                }
+                run_neo4j_query(query, params)
+                route_count += 1
+            except Exception as e:
+                continue
+        
+        # Load Brazilian airlines
+        url_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
+        airlines_df = pd.read_csv(url_airlines)
+        
+        airline_count = 0
+        for _, airline in airlines_df.iterrows():
+            query = """
+            MERGE (al:Airline {code: $code})
+            SET al.name = $name, al.country = $country
+            """
+            params = {
+                'code': airline.get('IATA', airline.get('ICAO', 'Unknown')),
+                'name': airline.get('Name', 'Unknown'),
+                'country': airline.get('Country', 'Brazil')
+            }
+            run_neo4j_query(query, params)
+            airline_count += 1
+        
+        logging.info(f"Brazil data loaded: {airport_count} airports, {airline_count} airlines, {route_count} routes")
+        return {
+            "message": "Brazil data loaded successfully", 
+            "airports": airport_count,
+            "airlines": airline_count,
+            "routes": route_count
+        }
+    except Exception as e:
+        logging.error(f"Error loading Brazil data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error loading Brazil data: {str(e)}")
+
+async def seed_full_dataset():
+    """Load complete dataset with all airports and routes"""
+    try:
+        logging.info("Loading full dataset...")
+        
+        # Load all airports
+        url_airports = 'https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv'
+        airports_df = pd.read_csv(url_airports)
+        
+        airport_count = 0
+        for _, row in airports_df.iterrows():
+            if pd.notna(row.get('iata_code')) and row.get('iata_code'):
+                try:
+                    query = """
+                    MERGE (a:Airport {code: $code})
+                    SET a.name = $name, 
+                        a.city = $city, 
+                        a.country = $country,
+                        a.latitude = $latitude,
+                        a.longitude = $longitude
+                    """
+                    
+                    # Parse coordinates
+                    lat, lon = 0.0, 0.0
+                    if pd.notna(row.get('coordinates')):
+                        try:
+                            coords = row['coordinates'].split(',')
+                            lon = float(coords[0])
+                            lat = float(coords[1])
+                        except:
+                            pass
+                    
+                    params = {
+                        'code': row['iata_code'],
+                        'name': row.get('name', ''),
+                        'city': row.get('municipality', ''),
+                        'country': row.get('iso_country', ''),
+                        'latitude': lat,
+                        'longitude': lon
+                    }
+                    run_neo4j_query(query, params)
+                    airport_count += 1
+                except Exception as e:
+                    continue
+        
+        # Load all routes
+        url_routes = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/13e519574832172b538fd5588673132cb826cd20/routes.csv'
+        routes_df = pd.read_csv(url_routes)
+        
+        route_count = 0
+        for _, route in routes_df.iterrows():
+            try:
+                query = """
+                MATCH (a:Airport {code: $from}), (b:Airport {code: $to})
+                MERGE (a)-[r:ROUTE {airline: $airline}]->(b)
+                SET r.distance_km = $distance
+                """
+                params = {
+                    'from': route['source_airport'],
+                    'to': route['destination_airport'],
+                    'airline': route.get('airline', 'Unknown'),
+                    'distance': float(route.get('distance', 0))
+                }
+                run_neo4j_query(query, params)
+                route_count += 1
+            except Exception as e:
+                continue
+        
+        # Load all airlines
+        url_base_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/Airlines_Unicas.csv'
+        url_info_airlines = 'https://gist.githubusercontent.com/XimenesJu/23ff54741a6f183b2c7e367d003dcc69/raw/2697297ee7ae3eed7c679f7d1f195c1f502aa11b/airline_info.csv'
+        
+        airlines_base_df = pd.read_csv(url_base_airlines)
+        airlines_info_df = pd.read_csv(url_info_airlines)
+        
+        # Merge airline data
+        airlines_df = pd.concat([airlines_base_df, airlines_info_df], ignore_index=True).drop_duplicates()
+        
+        airline_count = 0
+        for _, airline in airlines_df.iterrows():
+            try:
+                query = """
+                MERGE (al:Airline {code: $code})
+                SET al.name = $name, al.country = $country
+                """
+                params = {
+                    'code': airline.get('IATA', airline.get('ICAO', airline.get('Code', 'Unknown'))),
+                    'name': airline.get('Name', airline.get('Airline', 'Unknown')),
+                    'country': airline.get('Country', 'Unknown')
+                }
+                run_neo4j_query(query, params)
+                airline_count += 1
+            except Exception as e:
+                continue
+        
+        logging.info(f"Full dataset loaded: {airport_count} airports, {airline_count} airlines, {route_count} routes")
+        return {
+            "message": "Full dataset loaded successfully",
+            "airports": airport_count,
+            "airlines": airline_count,
+            "routes": route_count
+        }
+    except Exception as e:
+        logging.error(f"Error loading full dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error loading full dataset: {str(e)}")
 
 # Health check endpoint
 @app.get("/health")

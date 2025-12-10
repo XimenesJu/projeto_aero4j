@@ -62,11 +62,20 @@ const App = () => {
     }
   };
 
-  const handleSeedData = async () => {
+  const handleSeedData = async (region = null) => {
     setLoading(true);
     try {
-      const res = await axios.post(`${API}/seed-data`, { clear_existing: true });
-      toast.success(`Dados populados: ${res.data.airports} aeroportos, ${res.data.airlines} companhias, ${res.data.routes} rotas`);
+      const res = await axios.post(`${API}/seed-data`, { 
+        clear_existing: true,
+        region: region 
+      });
+      
+      let message = `Dados carregados com sucesso!`;
+      if (res.data.airports) {
+        message = `${res.data.airports} aeroportos, ${res.data.airlines} companhias, ${res.data.routes} rotas`;
+      }
+      
+      toast.success(message);
       setDataSeeded(true);
       loadGraphData();
     } catch (error) {
@@ -96,15 +105,35 @@ const App = () => {
                 <p className="text-sm text-slate-400">Análise de Redes de Aviação com GraphRAG + Neo4j</p>
               </div>
             </div>
-            <Button
-              onClick={handleSeedData}
-              disabled={loading || dataSeeded}
-              className="bg-cyan-400 text-black hover:bg-cyan-500 font-semibold rounded-md transition-all shadow-[0_0_15px_-3px_rgba(34,211,238,0.4)]"
-              data-testid="seed-data-button"
-            >
-              <Database className="mr-2 h-4 w-4" />
-              {dataSeeded ? 'Dados Carregados' : 'Popular Dados de Exemplo'}
-            </Button>
+            <div className="flex items-center space-x-3">
+              <Button
+                onClick={() => handleSeedData()}
+                disabled={loading}
+                className="bg-slate-700 text-white hover:bg-slate-600 font-semibold rounded-md transition-all"
+                data-testid="seed-sample-button"
+              >
+                <Database className="mr-2 h-4 w-4" />
+                Dados de Exemplo
+              </Button>
+              <Button
+                onClick={() => handleSeedData('BR')}
+                disabled={loading}
+                className="bg-green-600 text-white hover:bg-green-700 font-semibold rounded-md transition-all"
+                data-testid="seed-br-button"
+              >
+                <Database className="mr-2 h-4 w-4" />
+                Dados Brasil
+              </Button>
+              <Button
+                onClick={() => handleSeedData('full')}
+                disabled={loading}
+                className="bg-cyan-400 text-black hover:bg-cyan-500 font-semibold rounded-md transition-all shadow-[0_0_15px_-3px_rgba(34,211,238,0.4)]"
+                data-testid="seed-full-button"
+              >
+                <Database className="mr-2 h-4 w-4" />
+                Dataset Completo
+              </Button>
+            </div>
           </div>
         </div>
       </header>
