@@ -610,23 +610,27 @@ async def seed_brazil_data():
         # Create airline nodes for each unique airline code found in routes
         airlines_batch = []
         for airline_code in unique_airlines:
-            # Try to find airline details in CSV
-            airline_row = airlines_df[
-                (airlines_df.get('IATA', pd.Series()).str.upper() == str(airline_code).upper()) |
-                (airlines_df.get('ICAO', pd.Series()).str.upper() == str(airline_code).upper()) |
-                (airlines_df.get('Code', pd.Series()).str.upper() == str(airline_code).upper())
-            ]
+            airline_code_upper = str(airline_code).strip().upper()
             
-            if not airline_row.empty:
+            # Try to find airline details in CSV
+            airline_row = None
+            if 'IATA' in airlines_df.columns:
+                airline_row = airlines_df[airlines_df['IATA'].str.upper() == airline_code_upper]
+            if (airline_row is None or airline_row.empty) and 'ICAO' in airlines_df.columns:
+                airline_row = airlines_df[airlines_df['ICAO'].str.upper() == airline_code_upper]
+            if (airline_row is None or airline_row.empty) and 'Code' in airlines_df.columns:
+                airline_row = airlines_df[airlines_df['Code'].str.upper() == airline_code_upper]
+            
+            if airline_row is not None and not airline_row.empty:
                 row = airline_row.iloc[0]
-                name = row.get('Name') or row.get('Airline') or str(airline_code)
+                name = row.get('Name') or row.get('Airline') or airline_code_upper
                 country = row.get('Country', 'Unknown')
             else:
-                name = str(airline_code)
+                name = airline_code_upper
                 country = 'Unknown'
             
             airlines_batch.append({
-                'code': str(airline_code).upper(),
+                'code': airline_code_upper,
                 'name': name,
                 'country': country
             })
