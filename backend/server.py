@@ -719,15 +719,20 @@ async def seed_full_dataset():
                 name = airline.get('Name', airline.get('Airline', ''))
                 country = airline.get('Country', '')
                 
-                # Skip if essential fields are missing or 'Unknown'
-                if (not code or str(code).lower() in ['unknown', 'null', 'none'] or
-                    not name or str(name).lower() in ['unknown', 'null', 'none']):
+                # Skip ONLY if code AND name are both empty (not just "Unknown")
+                if not code and not name:
                     continue
+                
+                # Use "Unknown" as fallback if empty
+                if not code:
+                    code = 'Unknown'
+                if not name:
+                    name = 'Unknown'
                 
                 airline_data = {'code': code, 'name': name}
                 
-                # Only add country if it's valid
-                if country and str(country).lower() not in ['unknown', 'null', 'none']:
+                # Add country if available
+                if country:
                     airline_data['country'] = country
                 
                 airlines_batch.append(airline_data)
