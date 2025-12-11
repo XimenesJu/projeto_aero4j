@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import '@/App.css';
 import axios from 'axios';
 import { Loader2, Send, Database, GitBranch, Sparkles, Code2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button'; // Force recompile
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,11 +25,14 @@ const App = () => {
   // Graph filter states
   const [showAirports, setShowAirports] = useState(true);
   const [showAirlines, setShowAirlines] = useState(true);
-  const [showRoutes, setShowRoutes] = useState(true);
+  const [showRoutes, setShowRoutes] = useState(true); // Always show routes
   const [graphMode, setGraphMode] = useState('all'); // 'all', 'query-results', 'preset'
-  const [currentDataset, setCurrentDataset] = useState('BR'); // 'full' or 'BR'
+  const [currentDataset, setCurrentDataset] = useState('full'); // 'full' or 'BR' - usando full até backend atualizar
 
   useEffect(() => {
+    console.log('=== App initialized ===');
+    console.log('Backend URL:', BACKEND_URL);
+    console.log('API URL:', API);
     loadExamples();
     // Load graph data without seeding
     loadGraphData();
@@ -45,9 +48,11 @@ const App = () => {
   };
 
   const loadGraphData = async () => {
+    console.log('=== Loading graph data ===');
+    console.log('Fetching from:', `${API}/graph/data`);
     try {
       const res = await axios.get(`${API}/graph/data`);
-      console.log('Graph data loaded:', res.data);
+      console.log('✅ Graph data loaded successfully!');
       console.log('Total nodes:', res.data.nodes?.length);
       console.log('Total links:', res.data.links?.length);
       if (res.data.nodes?.length > 0) {
@@ -56,8 +61,9 @@ const App = () => {
       setGraphData(res.data);
       applyGraphFilters(res.data);
     } catch (error) {
-      console.error('Error loading graph data:', error);
-      toast.error('Erro ao carregar dados do grafo');
+      console.error('❌ Error loading graph data:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      toast.error('Erro ao carregar dados do grafo: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -92,15 +98,26 @@ const App = () => {
     if (currentDataset === 'BR') {
       console.log('Applying BR filter. Total nodes before filter:', filtered.nodes.length);
       
+      // Log first airport to see structure
+      const firstAirport = filtered.nodes.find(n => n.label === 'Airport');
+      if (firstAirport) {
+        console.log('First airport structure:', JSON.stringify(firstAirport, null, 2));
+      }
+      
       filtered.nodes = filtered.nodes.filter(node => {
-        // Get country from node properties
-        const nodeCountry = node.country || node.properties?.country;
+        // Get country from multiple possible locations
+        const nodeCountry = node.country || node.properties?.country || node.properties?.iso_country;
         
-        // Keep Brazilian airports
-        if (node.label === 'Airport' && nodeCountry === 'BR') return true;
+        if (node.label === 'Airport') {
+          const isBR = nodeCountry === 'BR' || nodeCountry === 'Brazil';
+          if (isBR) {
+            console.log('Found BR airport:', node.name, 'country:', nodeCountry);
+          }
+          return isBR;
+        }
+        
         // Keep airlines that operate in Brazil (connected to BR airports)
         if (node.label === 'Airline') {
-          // Will check connections after filtering
           return true;
         }
         return false;
@@ -126,16 +143,36 @@ const App = () => {
       
       console.log('Links after BR filter:', filtered.links.length);
       
+      // Debug: check link structure
+      if (filtered.links.length > 0) {
+        console.log('Sample link structure:', JSON.stringify(filtered.links[0], null, 2));
+      }
+      
       // Keep only airlines that have routes in the filtered data
-      const airlinesInRoutes = new Set(filtered.links.map(l => l.airline).filter(Boolean));
+      const airlinesInRoutes = new Set(
+        filtered.links
+          .map(l => l.airline || l.properties?.airline || l.label)
+          .filter(Boolean)
+      );
+      
+      console.log('Airlines found in routes:', airlinesInRoutes.size, Array.from(airlinesInRoutes).slice(0, 5));
+      console.log('Total airlines before filter:', filtered.nodes.filter(n => n.label === 'Airline').length);
+      
       filtered.nodes = filtered.nodes.filter(node => {
         if (node.label === 'Airline') {
-          return airlinesInRoutes.has(node.code) || airlinesInRoutes.has(node.id) || airlinesInRoutes.has(node.name);
+          const hasMatch = airlinesInRoutes.has(node.code) || 
+                          airlinesInRoutes.has(node.id) || 
+                          airlinesInRoutes.has(node.name);
+          if (hasMatch) {
+            console.log('Keeping airline:', node.name, node.code);
+          }
+          return hasMatch;
         }
         return true;
       });
       
       console.log('Final filtered nodes:', filtered.nodes.length);
+      console.log('Final airlines:', filtered.nodes.filter(n => n.label === 'Airline').length);
     } else {
       // Full dataset - include all links
       filtered.links = [...(data.links || [])];
@@ -151,11 +188,23 @@ const App = () => {
 
     const nodeIds = new Set(filtered.nodes.map(n => n.id));
     
+    console.log('Filtering links - showRoutes:', showRoutes);
+    console.log('Available links before filter:', filtered.links?.length);
+    console.log('Node IDs:', nodeIds.size);
+    
     filtered.links = (filtered.links || []).filter(link => {
-      if (!showRoutes) return false;
-      return nodeIds.has(link.source.id || link.source) && 
-             nodeIds.has(link.target.id || link.target);
+      if (!showRoutes) {
+        console.log('showRoutes is false, hiding all links');
+        return false;
+      }
+      const sourceId = link.source.id || link.source;
+      const targetId = link.target.id || link.target;
+      const hasSource = nodeIds.has(sourceId);
+      const hasTarget = nodeIds.has(targetId);
+      return hasSource && hasTarget;
     });
+    
+    console.log('Final links count:', filtered.links.length);
 
     setFilteredGraphData(filtered);
   };
@@ -172,7 +221,11 @@ const App = () => {
 
     setLoading(true);
     try {
-      const res = await axios.post(`${API}/graphrag/query`, { query });
+      console.log('Executing query:', query);
+      const res = await axios.post(`${API}/graphrag/query`, { query }, {
+        timeout: 30000 // 30 second timeout
+      });
+      console.log('Query response:', res.data);
       setResponse(res.data);
       
       // Check if the response has graph-worthy data (nodes/relationships)
@@ -181,10 +234,9 @@ const App = () => {
                            res.data.results.some(r => typeof r === 'object' && Object.keys(r).length > 0));
       
       if (hasGraphData) {
-        // Only switch to graph view if there's data to visualize
+        // Don't switch tabs - let user stay on query tab to see results
         toast.success('Consulta executada com sucesso! Veja o grafo na aba de visualização.');
         setGraphMode('query-results');
-        setActiveTab('graph');
         loadGraphData();
       } else {
         // For simple text responses, stay on query tab
@@ -192,7 +244,23 @@ const App = () => {
       }
     } catch (error) {
       console.error('Error executing query:', error);
-      toast.error('Erro ao executar consulta: ' + (error.response?.data?.detail || error.message));
+      console.error('Error response:', error.response?.data);
+      
+      let errorMessage = 'Erro ao executar consulta';
+      
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Consulta demorou muito tempo. Tente uma pergunta mais simples.';
+      } else if (error.response?.status === 504) {
+        errorMessage = 'Consulta demorou muito tempo. Tente uma pergunta mais simples.';
+      } else if (error.response?.status === 500) {
+        errorMessage = error.response?.data?.detail || 'Erro no servidor. Verifique sua chave de API.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -297,12 +365,10 @@ const App = () => {
       // Execute query to get data
       await axios.post(`${API}/query`, { query: cypher });
       
-      
       // Reload graph data to show updated visualization
       await loadGraphData();
-      setActiveTab('graph');
       
-      toast.success('Visualização carregada!');
+      toast.success('Visualização carregada! Acesse a aba de visualização.');
     } catch (error) {
       console.error('Error loading preset:', error);
       toast.error('Erro ao carregar visualização: ' + (error.response?.data?.detail || error.message));

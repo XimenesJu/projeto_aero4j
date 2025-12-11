@@ -184,14 +184,18 @@ async def generate_cypher_query(natural_language_query: str) -> str:
     
     system_prompt = """Neo4j Cypher expert. Aviation database with:
 - Airport: code, name, city, country
-- Airline: code, name, country
+- Airline: code, name, country  
 - ROUTE: airline, distance_km, duration_hours
 
 Return ONLY Cypher query. LIMIT 50.
 
 Examples:
-- "airports in Brazil" -> MATCH (a:Airport {country: 'Brazil'}) RETURN a LIMIT 50
-- "routes from GRU" -> MATCH (a:Airport {code: 'GRU'})-[r:ROUTE]->(b:Airport) RETURN a, r, b LIMIT 50
+- "aeroportos no Brasil" -> MATCH (a:Airport) WHERE a.country = 'Brazil' RETURN a LIMIT 50
+- "rotas de GRU" -> MATCH (a:Airport {code: 'GRU'})-[r:ROUTE]->(b:Airport) RETURN a, r, b LIMIT 50
+- "linhas aéreas no Brasil" -> MATCH (a:Airline) WHERE a.country = 'Brazil' OR a.country = 'BR' RETURN a LIMIT 50
+- "linhas aéreas" -> MATCH (a:Airline) RETURN a LIMIT 50
+- "quantas linhas aéreas" -> MATCH (a:Airline) RETURN count(a) as total
+- "rotas da LATAM" -> MATCH (a:Airport)-[r:ROUTE]->(b:Airport) WHERE r.airline CONTAINS 'LATAM' OR r.airline CONTAINS 'latam' RETURN a, r, b LIMIT 50
 """
     
     full_prompt = f"{system_prompt}\n\nQuestion: {natural_language_query}"
@@ -251,14 +255,26 @@ async def root():
 @api_router.post("/graphrag/query", response_model=QueryResponse)
 async def graphrag_query(request: QueryRequest):
     try:
+        logging.info(f"Received query: {request.query}")
+        
         # Generate Cypher query using LLM with timeout
-        cypher_query = await asyncio.wait_for(
-            generate_cypher_query(request.query),
-            timeout=15.0  # 15 second timeout for query generation
-        )
+        try:
+            cypher_query = await asyncio.wait_for(
+                generate_cypher_query(request.query),
+                timeout=15.0  # 15 second timeout for query generation
+            )
+            logging.info(f"Generated Cypher: {cypher_query}")
+        except asyncio.TimeoutError:
+            logging.error("Query generation timed out after 15 seconds")
+            raise HTTPException(status_code=504, detail="A geração da consulta demorou muito. Tente uma pergunta mais simples.")
         
         # Execute the generated query
-        results = run_neo4j_query(cypher_query)
+        try:
+            results = run_neo4j_query(cypher_query)
+            logging.info(f"Query returned {len(results)} results")
+        except Exception as e:
+            logging.error(f"Neo4j query failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Erro ao executar consulta no banco: {str(e)}")
         
         # Generate natural language answer using LLM
         if openai_api_key or gemini_api_key:
@@ -272,30 +288,33 @@ Answer in Portuguese, 2 sentences max."""
                 if openai_api_key:
                     try:
                         answer = call_openai_api(answer_prompt)
-                    except:
+                        logging.info("Answer generated with OpenAI")
+                    except Exception as openai_error:
+                        logging.warning(f"OpenAI failed: {openai_error}")
                         if gemini_api_key and _working_model:
                             answer = call_gemini_api(answer_prompt, _working_model)
+                            logging.info("Answer generated with Gemini")
                         else:
                             raise
                 else:
                     answer = call_gemini_api(answer_prompt, _working_model)
+                    logging.info("Answer generated with Gemini")
             except Exception as e:
                 logging.warning(f"Could not generate answer with LLM: {str(e)}. Using basic response.")
-                answer = f"Found {len(results)} results for your query."
+                answer = f"Encontrados {len(results)} resultados para sua consulta."
         else:
-            answer = f"Found {len(results)} results for your query."
+            answer = f"Encontrados {len(results)} resultados para sua consulta."
         
         return QueryResponse(
             answer=answer,
             cypher_query=cypher_query,
             results=results[:50]
         )
-    except asyncio.TimeoutError:
-        logging.error(f"Query timed out after 15 seconds")
-        raise HTTPException(status_code=504, detail="Query timed out. Please try a simpler question.")
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error in graphrag_query: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
+        logging.error(f"Error in graphrag_query: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao processar consulta: {str(e)}")
 
 @api_router.post("/query")
 async def direct_cypher_query(request: QueryRequest):
