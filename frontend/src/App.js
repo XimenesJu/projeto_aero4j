@@ -47,10 +47,17 @@ const App = () => {
   const loadGraphData = async () => {
     try {
       const res = await axios.get(`${API}/graph/data`);
+      console.log('Graph data loaded:', res.data);
+      console.log('Total nodes:', res.data.nodes?.length);
+      console.log('Total links:', res.data.links?.length);
+      if (res.data.nodes?.length > 0) {
+        console.log('Sample node:', res.data.nodes[0]);
+      }
       setGraphData(res.data);
       applyGraphFilters(res.data);
     } catch (error) {
       console.error('Error loading graph data:', error);
+      toast.error('Erro ao carregar dados do grafo');
     }
   };
 
@@ -83,9 +90,14 @@ const App = () => {
 
     // Apply dataset filter (BR or full)
     if (currentDataset === 'BR') {
+      console.log('Applying BR filter. Total nodes before filter:', filtered.nodes.length);
+      
       filtered.nodes = filtered.nodes.filter(node => {
+        // Get country from node properties
+        const nodeCountry = node.country || node.properties?.country;
+        
         // Keep Brazilian airports
-        if (node.label === 'Airport' && node.country === 'BR') return true;
+        if (node.label === 'Airport' && nodeCountry === 'BR') return true;
         // Keep airlines that operate in Brazil (connected to BR airports)
         if (node.label === 'Airline') {
           // Will check connections after filtering
@@ -94,12 +106,17 @@ const App = () => {
         return false;
       });
       
+      console.log('Nodes after BR filter:', filtered.nodes.length);
+      console.log('BR airports:', filtered.nodes.filter(n => n.label === 'Airport').length);
+      
       // Filter routes to only BR-to-BR connections
       const brAirportIds = new Set(
         filtered.nodes
-          .filter(n => n.label === 'Airport' && n.country === 'BR')
+          .filter(n => n.label === 'Airport')
           .map(n => n.id)
       );
+      
+      console.log('BR airport IDs:', brAirportIds.size);
       
       filtered.links = (data.links || []).filter(link => {
         const sourceId = link.source.id || link.source;
@@ -107,17 +124,22 @@ const App = () => {
         return brAirportIds.has(sourceId) && brAirportIds.has(targetId);
       });
       
+      console.log('Links after BR filter:', filtered.links.length);
+      
       // Keep only airlines that have routes in the filtered data
       const airlinesInRoutes = new Set(filtered.links.map(l => l.airline).filter(Boolean));
       filtered.nodes = filtered.nodes.filter(node => {
         if (node.label === 'Airline') {
-          return airlinesInRoutes.has(node.code) || airlinesInRoutes.has(node.id);
+          return airlinesInRoutes.has(node.code) || airlinesInRoutes.has(node.id) || airlinesInRoutes.has(node.name);
         }
         return true;
       });
+      
+      console.log('Final filtered nodes:', filtered.nodes.length);
     } else {
       // Full dataset - include all links
       filtered.links = [...(data.links || [])];
+      console.log('Full dataset - nodes:', filtered.nodes.length, 'links:', filtered.links.length);
     }
 
     // Apply type filters
