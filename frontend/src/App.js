@@ -315,7 +315,7 @@ const App = () => {
                 data-testid="filter-br-button"
               >
                 <Database className="mr-2 h-4 w-4" />
-                🇧🇷 Ver Dados Brasil
+                Dados Brasil
               </Button>
               <Button
                 onClick={() => handleFilterDataset('full')}
