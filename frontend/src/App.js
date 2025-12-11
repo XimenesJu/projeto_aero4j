@@ -56,6 +56,12 @@ const App = () => {
 
   // Apply filters to graph data
   const applyGraphFilters = (data = graphData) => {
+    // Se não há dados, retorna vazio
+    if (!data || !data.nodes || !data.links) {
+      setFilteredGraphData({ nodes: [], links: [] });
+      return;
+    }
+
     let filtered = { nodes: [], links: [] };
 
     // If showing query results, use only nodes from last query
@@ -95,7 +101,7 @@ const App = () => {
           .map(n => n.id)
       );
       
-      filtered.links = data.links.filter(link => {
+      filtered.links = (data.links || []).filter(link => {
         const sourceId = link.source.id || link.source;
         const targetId = link.target.id || link.target;
         return brAirportIds.has(sourceId) && brAirportIds.has(targetId);
@@ -109,6 +115,9 @@ const App = () => {
         }
         return true;
       });
+    } else {
+      // Full dataset - include all links
+      filtered.links = [...(data.links || [])];
     }
 
     // Apply type filters
@@ -120,7 +129,7 @@ const App = () => {
 
     const nodeIds = new Set(filtered.nodes.map(n => n.id));
     
-    filtered.links = filtered.links.filter(link => {
+    filtered.links = (filtered.links || []).filter(link => {
       if (!showRoutes) return false;
       return nodeIds.has(link.source.id || link.source) && 
              nodeIds.has(link.target.id || link.target);
@@ -131,8 +140,10 @@ const App = () => {
 
   // Update filters when dependencies change
   useEffect(() => {
-    applyGraphFilters();
-  }, [showAirports, showAirlines, showRoutes, graphMode, response, currentDataset]);
+    if (graphData && graphData.nodes && graphData.nodes.length > 0) {
+      applyGraphFilters(graphData);
+    }
+  }, [showAirports, showAirlines, showRoutes, graphMode, response, currentDataset, graphData]);
 
   const handleQuery = async () => {
     if (!query.trim()) return;
@@ -170,6 +181,11 @@ const App = () => {
     setCurrentDataset(region || 'full');
     setGraphMode('all');
     setResponse(null);
+    
+    // Se não há dados carregados, carrega primeiro
+    if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
+      await loadGraphData();
+    }
     
     if (region === 'BR') {
       // Filter to show only Brazilian data
