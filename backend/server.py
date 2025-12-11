@@ -825,16 +825,17 @@ async def seed_full_dataset():
 async def health_check():
     return {"status": "ok", "message": "Backend is running"}
 
-# Include the router in the main app
-app.include_router(api_router)
-
+# Configure CORS BEFORE including routers
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=["*"],  # Allow all origins for development
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include the router in the main app
+app.include_router(api_router)
 
 # Configure logging
 logging.basicConfig(
