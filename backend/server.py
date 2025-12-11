@@ -37,6 +37,13 @@ app = FastAPI()
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# Simple cache for graph data
+graph_data_cache = {
+    'data': None,
+    'timestamp': None
+}
+CACHE_DURATION = 60  # Cache for 60 seconds
+
 # Define Models
 class QueryRequest(BaseModel):
     query: str
@@ -325,6 +332,18 @@ async def direct_cypher_query(request: QueryRequest):
 @api_router.get("/graph/data", response_model=GraphData)
 async def get_graph_data():
     try:
+        import time
+        
+        # Check cache
+        current_time = time.time()
+        if (graph_data_cache['data'] is not None and 
+            graph_data_cache['timestamp'] is not None and 
+            current_time - graph_data_cache['timestamp'] < CACHE_DURATION):
+            logging.info("Returning cached graph data")
+            return graph_data_cache['data']
+        
+        logging.info("Fetching graph data from Neo4j...")
+        
         # Get nodes (airports and airlines) - no limit to show all data
         nodes_query = """
         MATCH (n)
@@ -353,24 +372,39 @@ async def get_graph_data():
                 if value is not None and value != '' and str(value).lower() not in ['unknown', 'null', 'none']:
                     filtered_props[key] = value
             
+            # Add country to properties for easy access
+            if label == 'Airport':
+                filtered_props['country'] = filtered_props.get('country', 'Unknown')
+            
             nodes.append({
                 'id': str(node_id),
                 'label': label,
                 'name': filtered_props.get('name') or filtered_props.get('code', f"{label}_{node_id}"),
-                'properties': filtered_props
+                'country': filtered_props.get('country', 'Unknown') if label == 'Airport' else None,
+                **filtered_props
             })
         
         # Format links
         links = []
         for link in links_data:
+            link_props = link.get('properties', {})
             links.append({
                 'source': str(link['source']),
                 'target': str(link['target']),
                 'type': link['type'],
-                'properties': link.get('properties', {})
+                'airline': link_props.get('airline', 'Unknown'),
+                'distance': link_props.get('distance_km', 0)
             })
         
-        return GraphData(nodes=nodes, links=links)
+        result = GraphData(nodes=nodes, links=links)
+        
+        # Update cache
+        graph_data_cache['data'] = result
+        graph_data_cache['timestamp'] = current_time
+        
+        logging.info(f"Graph data loaded: {len(nodes)} nodes, {len(links)} links")
+        
+        return result
     except Exception as e:
         logging.error(f"Error getting graph data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving graph data: {str(e)}")
@@ -414,6 +448,10 @@ async def seed_data(request: SeedDataRequest):
     - region='full': Complete dataset (3993 nodes)
     """
     try:
+        # Clear cache when data is being modified
+        graph_data_cache['data'] = None
+        graph_data_cache['timestamp'] = None
+        
         # Clear existing data if requested
         if request.clear_existing:
             run_neo4j_query("MATCH (n) DETACH DELETE n")
