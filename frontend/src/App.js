@@ -177,28 +177,29 @@ const App = () => {
   };
 
   const handleFilterDataset = async (region = null) => {
-    // Filter existing data without modifying database
-    setCurrentDataset(region || 'full');
-    setGraphMode('all');
-    setResponse(null);
-    
-    // Se não há dados carregados, carrega primeiro
-    if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
+    try {
+      setLoading(true);
+      
+      // Set the dataset filter
+      setCurrentDataset(region || 'full');
+      setGraphMode('all');
+      setResponse(null);
+      
+      // Always reload data to ensure we have fresh data
       await loadGraphData();
+      
+      if (region === 'BR') {
+        toast.success('Exibindo apenas dados brasileiros');
+      } else {
+        toast.success('Exibindo todos os dados');
+      }
+    } catch (error) {
+      console.error('Error filtering dataset:', error);
+      toast.error('Erro ao filtrar dados');
+    } finally {
+      setLoading(false);
     }
-    
-    if (region === 'BR') {
-      // Filter to show only Brazilian data
-      toast.success('Exibindo apenas dados brasileiros');
-    } else {
-      // Show all data
-      toast.success('Exibindo todos os dados');
-    }
-    
-    await loadGraphData();
-  };
-
-  const handleSeedData = async (region = null) => {
+  };  const handleSeedData = async (region = null) => {
     setLoading(true);
     try {
       const res = await axios.post(`${API}/seed-data`, { 
